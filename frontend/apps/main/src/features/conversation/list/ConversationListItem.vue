@@ -195,7 +195,8 @@ const INDICATOR_GROUP_CLASS = 'flex shrink-0 items-center gap-1'
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getRelativeTime, formatFullTimestamp } from '@shared-ui/utils/datetime.js'
+import { getRelativeTime } from '@shared-ui/utils/datetime.js'
+import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 import { Hourglass, Mail, Reply, MailOpen, SquareCheck, UserRoundCheck, Users } from 'lucide-vue-next'
 import { CHANNEL_ICONS } from '@main/constants/channelIcons.js'
 import { Avatar, AvatarFallback, AvatarImage } from '@shared-ui/components/ui/avatar'
@@ -223,6 +224,7 @@ const conversationStore = useConversationStore()
 const usersStore = useUsersStore()
 const teamStore = useTeamStore()
 const appSettingsStore = useAppSettingsStore()
+const { formatFullTimestamp } = useWorkspaceDateTime()
 const { canBulkAct } = useBulkActionPermissions()
 const { t } = useI18n()
 

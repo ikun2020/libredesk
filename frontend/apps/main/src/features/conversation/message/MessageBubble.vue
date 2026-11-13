@@ -300,7 +300,7 @@ import {
 import { Button } from '@shared-ui/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
 import { Spinner } from '@shared-ui/components/ui/spinner'
-import { formatMessageTimestamp, formatFullTimestamp } from '@shared-ui/utils/datetime.js'
+import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 import { Avatar, AvatarFallback, AvatarImage } from '@shared-ui/components/ui/avatar'
 import { Letter } from 'vue-letter'
 import { allowedCssProperties } from 'lettersanitizer'
@@ -313,6 +313,7 @@ import { containsQuoteMarkers } from '@shared-ui/utils/quotedContent.js'
 import { getMessageDeliveryStatus } from './messageDeliveryStatus.js'
 import { delayedLoading } from '@main/utils/delayed-loading'
 
+const { formatMessageTimestamp, formatFullTimestamp } = useWorkspaceDateTime()
 const extendedCssProperties = [...allowedCssProperties, 'transform', 'transform-origin']
 // The sanitizer has no strikethrough tag, so these are rewritten to a styled span it keeps.
 const STRIKE_OPEN_TAG = /<(s|del|strike)(?=[\s>])[^>]*>/gi

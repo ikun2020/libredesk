@@ -50,6 +50,11 @@ const submitForm = async (values) => {
   const updatedValues = Object.fromEntries(
     Object.entries(values).map(([key, value]) => [`app.${key}`, value])
   )
+  if (typeof updatedValues['app.timezone'] === 'string') {
+    updatedValues['app.timezone'] = updatedValues['app.timezone'].trim()
+  }
   await api.updateSettings('general', updatedValues)
+  // Apply saved settings immediately while keeping server-provided metadata.
+  settingsStore.setSettings({ ...settingsStore.settings, ...updatedValues })
 }
 </script>

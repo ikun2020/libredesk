@@ -240,12 +240,12 @@ const loginAction = () => {
       email: loginForm.value.email,
       password: loginForm.value.password
     })
-    .then((resp) => {
+    .then(async (resp) => {
       if (resp?.data?.data) {
         userStore.setCurrentUser(resp.data.data)
       }
-      // Also fetch general setting as user's logged in.
-      appSettingsStore.fetchSettings('general')
+      // Load the workspace timezone before rendering the first conversation.
+      await appSettingsStore.fetchSettings('general')
 
       // Redirect to the 'next' parameter if it exists
       const nextParam = router.currentRoute.value.query.next

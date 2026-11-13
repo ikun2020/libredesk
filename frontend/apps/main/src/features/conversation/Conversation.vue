@@ -126,7 +126,7 @@ import {
   DropdownMenuTrigger
 } from '@shared-ui/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
-import { formatMessageTimestamp } from '@shared-ui/utils/datetime.js'
+import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 import { Button } from '@shared-ui/components/ui/button'
 import MessageList from '@/features/conversation/message/MessageList.vue'
 import ReplyBox from './ReplyBox.vue'
@@ -168,6 +168,7 @@ const goBackToList = () => {
 const isSnoozed = computed(
   () => conversationStore.current?.status === CONVERSATION_DEFAULT_STATUSES.SNOOZED
 )
+const { formatMessageTimestamp } = useWorkspaceDateTime()
 const snoozedUntilLabel = computed(() =>
   conversationStore.current?.snoozed_until
     ? formatMessageTimestamp(conversationStore.current.snoozed_until)

@@ -1,7 +1,7 @@
 <template>
   <div class="flex items-center gap-3">
     <div class="h-px flex-1 bg-border"></div>
-    <span class="text-xs text-muted-foreground">{{ label }}</span>
+    <span class="text-xs text-muted-foreground">{{ displayLabel }}</span>
     <div class="h-px flex-1 bg-border"></div>
   </div>
 </template>
@@ -15,12 +15,17 @@ const props = defineProps({
   date: {
     type: [String, Date],
     required: true
+  },
+  label: {
+    type: String,
+    default: undefined
   }
 })
 
 const { t } = useI18n()
 
-const label = computed(() => {
+const displayLabel = computed(() => {
+  if (props.label !== undefined) return props.label
   const date = new Date(props.date)
   if (isToday(date)) return t('globals.terms.today')
   if (isYesterday(date)) return t('globals.terms.yesterday')

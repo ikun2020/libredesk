@@ -47,10 +47,12 @@ import { computed, ref, watch } from 'vue'
 import { useConversationStore } from '@/stores/conversation'
 import { useI18n } from 'vue-i18n'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
-import { getRelativeTime, formatFullTimestamp } from '@shared-ui/utils/datetime.js'
+import { getRelativeTime } from '@shared-ui/utils/datetime.js'
+import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 import api from '../../../api'
 
 const conversationStore = useConversationStore()
+const { formatFullTimestamp } = useWorkspaceDateTime()
 const conversation = computed(() => conversationStore.current)
 const { t } = useI18n()
 const loaded = ref(false)

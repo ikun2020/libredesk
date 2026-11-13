@@ -76,7 +76,9 @@
 <script setup>
 import { useConversationStore } from '@/stores/conversation'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
-import { formatFullTimestamp, getRelativeTime } from '@shared-ui/utils/datetime.js'
+import { getRelativeTime } from '@shared-ui/utils/datetime.js'
+import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 
 const conversationStore = useConversationStore()
+const { formatFullTimestamp } = useWorkspaceDateTime()
 </script>

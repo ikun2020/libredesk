@@ -1,4 +1,4 @@
-import { format, differenceInMinutes, differenceInHours, differenceInDays, differenceInMonths, differenceInYears } from 'date-fns'
+import { differenceInMinutes, differenceInHours, differenceInDays, differenceInMonths, differenceInYears } from 'date-fns'
 
 export function getRelativeTime (timestamp, now = new Date()) {
   try {
@@ -30,10 +30,59 @@ export const formatDuration = (seconds, showSeconds = true) => {
   return `${hours}h ${mins}m ${showSeconds ? `${secs}s` : ''}`
 }
 
-export const formatMessageTimestamp = (time) => {
-  return format(time, 'd MMM, hh:mm a')
+const timestampFormatters = new Map()
+
+function getTimestampFormatter (timeZone) {
+  const zone = typeof timeZone === 'string' && timeZone.trim() ? timeZone.trim() : 'UTC'
+  if (timestampFormatters.has(zone)) return timestampFormatters.get(zone)
+
+  let formatter
+  try {
+    formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      calendar: 'gregory',
+      numberingSystem: 'latn',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    })
+  } catch {
+    // Missing or obsolete zone settings must not silently use the agent's zone.
+    formatter = getTimestampFormatter('UTC')
+  }
+  if (timestampFormatters.size >= 16) timestampFormatters.delete(timestampFormatters.keys().next().value)
+  timestampFormatters.set(zone, formatter)
+  return formatter
 }
 
-export const formatFullTimestamp = (time) => {
-  return format(time, 'd MMM yyyy, hh:mm a')
+function timestampParts (time, timeZone) {
+  if (time === null || time === undefined || time === '') return null
+  const date = time instanceof Date ? time : new Date(time)
+  if (!Number.isFinite(date.getTime())) return null
+  return Object.fromEntries(getTimestampFormatter(timeZone).formatToParts(date).map(({ type, value }) => [type, value]))
+}
+
+export const formatDate = (time, timeZone = 'UTC') => {
+  const parts = timestampParts(time, timeZone)
+  return parts ? `${parts.year}-${parts.month}-${parts.day}` : ''
+}
+
+export const formatTime = (time, timeZone = 'UTC') => {
+  const parts = timestampParts(time, timeZone)
+  return parts ? `${parts.hour}:${parts.minute}` : ''
+}
+
+export const formatFullTimestamp = (time, timeZone = 'UTC') => {
+  const parts = timestampParts(time, timeZone)
+  return parts ? `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}` : ''
+}
+
+export const formatMessageTimestamp = formatFullTimestamp
+
+export const isSameDayInTimeZone = (first, second, timeZone = 'UTC') => {
+  const date = formatDate(first, timeZone)
+  return date !== '' && date === formatDate(second, timeZone)
 }

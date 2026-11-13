@@ -19,6 +19,7 @@
             <DaySeparator
               v-if="row.showDaySeparator"
               :date="row.message.created_at"
+              :label="formatDate(row.message.created_at)"
               class="mb-4"
             />
             <div v-if="!row.message.private && row.message.type !== 'activity'">
@@ -88,7 +89,7 @@ import { useUserStore } from '@main/stores/user'
 import { Loader2 } from 'lucide-vue-next'
 import ScrollToBottomButton from '@shared-ui/components/ScrollToBottomButton'
 import DaySeparator from '@shared-ui/components/DaySeparator'
-import { isSameDay } from 'date-fns'
+import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 import AssignSelfNudge from './AssignSelfNudge.vue'
 import { useEmitter } from '@main/composables/useEmitter'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents'
@@ -105,6 +106,7 @@ const HIGHLIGHT_MS = 2500
 const OLDER_MESSAGES_SCROLL_DISTANCE = 48
 
 const route = useRoute()
+const { formatDate, isSameDay } = useWorkspaceDateTime()
 
 const conversationStore = useConversationStore()
 const userStore = useUserStore()
@@ -349,7 +351,7 @@ const messageRows = computed(() => {
       spacingClass: getSpacingClass(index, groupWithPrev),
       showDaySeparator:
         index === 0 ||
-        !isSameDay(new Date(messages[index - 1].created_at), new Date(message.created_at))
+        !isSameDay(messages[index - 1].created_at, message.created_at)
     }
   })
 })
