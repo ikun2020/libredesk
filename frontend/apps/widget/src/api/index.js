@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { createVisitorProfileSync } from '../utils/visitorProfile.js'
 
 let _sessionToken = ''
 let _visitorToken = ''
@@ -7,6 +8,21 @@ let _sessionRefreshPending = false
 export function usesSecureIntegration() {
   return new URLSearchParams(window.location.search).get('integration') === '1'
 }
+
+export function usesVisitorProfileIntegration() {
+  return new URLSearchParams(window.location.search).get('integration') === 'lite'
+}
+
+const visitorProfileSync = createVisitorProfileSync({
+  getToken: () => _sessionToken,
+  canSync: () => usesVisitorProfileIntegration() && _stores?.userStore.isVisitor === true,
+  send: (profile, token, signal) => http.post('/api/v1/widget/chat/visitor/profile', profile, {
+    widgetSessionToken: token, signal
+  })
+})
+export const clearVisitorProfile = () => visitorProfileSync.clear()
+export const flushVisitorProfile = () => visitorProfileSync.flush()
+export const setVisitorProfile = (profile) => usesVisitorProfileIntegration() && visitorProfileSync.set(profile)
 
 function postToParent(data) {
   if (!window.parent || window.parent === window) return
@@ -78,10 +94,12 @@ export function saveSession(sessionToken, user, userStore, isNewVisitor = false)
   if (user) userStore.setUserMeta(user)
   if (isNewVisitor) setVisitorToken(sessionToken)
   postToParent({ type: 'STORE_SESSION', token: sessionToken })
+  void flushVisitorProfile()
 }
 
 // Returns visitor token if current user is a verified contact (for merge).
 function getVisitorTokenForMerge() {
+  if (usesVisitorProfileIntegration()) return null
   const vt = getVisitorToken()
   if (!vt || !_sessionToken || vt === _sessionToken) {
     return null
@@ -103,8 +121,9 @@ http.interceptors.request.use((request) => {
   if (request.url && request.url.includes('/api/v1/widget/')) {
     const inboxId = getInboxIDFromQuery()
 
-    if (_sessionToken) {
-      request.headers['Authorization'] = `Bearer ${_sessionToken}`
+    const sessionToken = request.widgetSessionToken ?? _sessionToken
+    if (sessionToken) {
+      request.headers['Authorization'] = `Bearer ${sessionToken}`
     }
 
     if (inboxId) {
@@ -143,6 +162,8 @@ http.interceptors.response.use(
         delete error.config.headers['X-Libredesk-Visitor-Token']
       }
       if (error.config.url?.includes('/chat/auth/exchange')) error.config.data = '[redacted]'
+      if (error.config.url?.includes('/chat/visitor/profile') || usesVisitorProfileIntegration()) error.config.data = '[redacted]'
+      delete error.config.widgetSessionToken
     }
     return Promise.reject(error)
   }
@@ -157,6 +178,10 @@ const getAvailableLanguages = () => http.get('/api/v1/lang')
 const exchangeJWTForSession = (jwt) => http.post('/api/v1/widget/chat/auth/exchange', { jwt })
 const getAuthMe = () => http.get('/api/v1/widget/chat/auth/me')
 const initChatConversation = (data, files = []) => {
+  if (usesVisitorProfileIntegration() && !data.delivery_id && (!_sessionToken || _stores?.userStore.isVisitor === true)) {
+    const profile = visitorProfileSync.get()
+    if (profile) data = { ...data, visitor_profile: profile }
+  }
   if (!files.length) return http.post('/api/v1/widget/chat/conversations/init', data)
 
   const formData = new FormData()

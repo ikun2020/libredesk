@@ -18,7 +18,8 @@ import { useWidgetStore } from './store/widget.js'
 import { useChatStore } from '@widget/store/chat.js'
 import { useUserStore } from './store/user.js'
 import { initWidgetWS, closeWidgetWebSocket, sendPageVisit, skipInitialWsSync } from './websocket.js'
-import api, { setApiSessionToken, initVisitorToken, saveSession, registerStores, usesSecureIntegration } from '@widget/api/index.js'
+import api, { setApiSessionToken, initVisitorToken, saveSession, registerStores, usesSecureIntegration,
+  usesVisitorProfileIntegration, setVisitorProfile, clearVisitorProfile, flushVisitorProfile } from '@widget/api/index.js'
 import { useUnreadCount } from './composables/useUnreadCount.js'
 import { initAudioContext } from '@shared-ui/composables/useNotificationSound.js'
 import { hexToHSL, getContrastingHSL } from '@shared-ui/utils/color.js'
@@ -70,7 +71,7 @@ watch(
 
 onMounted(() => {
   setupParentMessageListeners()
-  window.parent.postMessage({ type: 'VUE_APP_READY', securityProtocol: 1 }, '*')
+  window.parent.postMessage({ type: 'VUE_APP_READY', securityProtocol: 1, visitorProfileProtocol: 1 }, '*')
 })
 
 const signalWidgetLoaded = async () => {
@@ -148,6 +149,9 @@ const setupParentMessageListeners = () => {
       widgetStore.setMobileFullScreen(event.data.isMobile)
     } else if (event.data.type === 'WIDGET_EXPANDED') {
       widgetStore.setExpanded(event.data.isExpanded)
+    } else if (event.data.type === 'SET_VISITOR_PROFILE') {
+      // Lite profiles are reference data for the current random visitor only.
+      if (parentOrigin && usesVisitorProfileIntegration()) setVisitorProfile(event.data.profile)
     } else if (event.data.type === 'SESSION_DATA') {
       if (event.data.visitorToken) {
         initVisitorToken(event.data.visitorToken)
@@ -165,6 +169,7 @@ const setupParentMessageListeners = () => {
             const meResp = await api.getAuthMe()
             if (userStore.userSessionToken === sessionToken) {
               userStore.setUserMeta(meResp.data.data)
+              void flushVisitorProfile()
             }
           } catch {
             // 401 is handled by the global response interceptor.
@@ -179,6 +184,7 @@ const setupParentMessageListeners = () => {
     } else if (event.data.type === 'SET_JWT_TOKEN' ||
                (event.data.type === 'REFRESH_JWT_TOKEN' && usesSecureIntegration())) {
       const request = ++identityRequest
+      clearVisitorProfile()
       const preserveConversation = event.data.type === 'REFRESH_JWT_TOKEN'
       if (event.data.visitorToken) {
         initVisitorToken(event.data.visitorToken)
@@ -227,6 +233,7 @@ const setupParentMessageListeners = () => {
       }
     } else if (event.data.type === 'CLEAR_SESSION') {
       identityRequest++
+      clearVisitorProfile()
       proactive.reset()
       chatStore.drafts = {}
       chatStore.preChatDraft = {}

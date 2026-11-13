@@ -392,6 +392,7 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	g.POST("/api/v1/widget/chat/auth/revoke", rateLimit(validateWidgetInbox(handleSecureWidgetRevoke), "widget"))
 	g.POST("/api/v1/widget/chat/auth/revoke-legacy", rateLimit(validateWidgetInbox(handleRevokeLegacyWidgetSessions), "widget"))
 	g.GET("/api/v1/widget/chat/auth/me", rateLimit(widgetAuth(handleWidgetAuthMe), "widget"))
+	g.POST("/api/v1/widget/chat/visitor/profile", rateLimit(widgetAuth(handleWidgetVisitorProfile), "widget"))
 	g.POST("/api/v1/widget/chat/conversations/init", rateLimit(widgetAuth(handleChatInit), "widget"))
 	g.GET("/api/v1/widget/chat/conversations", rateLimit(widgetAuth(handleGetConversations), "widget"))
 	g.POST("/api/v1/widget/chat/conversations/{uuid}/update-last-seen", rateLimit(widgetAuth(handleChatUpdateLastSeen), "widget"))

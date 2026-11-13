@@ -1,6 +1,7 @@
 package user
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,28 @@ import (
 	"github.com/abhinavxd/libredesk/internal/user/models"
 	"github.com/volatiletech/null/v9"
 )
+
+// UpdateVisitorProfile changes only the current visitor's unverified display
+// data. It never looks up, merges, or upgrades an identity by the supplied email.
+// The SQL type guard also protects against a visitor being upgraded concurrently.
+func (u *Manager) UpdateVisitorProfile(id int, email string, attributes map[string]string) (bool, error) {
+	if id <= 0 {
+		return false, nil
+	}
+	if attributes == nil {
+		attributes = map[string]string{}
+	}
+	data, err := json.Marshal(attributes)
+	if err != nil {
+		return false, fmt.Errorf("encoding visitor profile: %w", err)
+	}
+	result, err := u.q.UpdateVisitorProfile.Exec(id, strings.ToLower(strings.TrimSpace(email)), data)
+	if err != nil {
+		return false, fmt.Errorf("updating visitor profile: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
 
 // CreateVisitor creates a new visitor user.
 func (u *Manager) CreateVisitor(user *models.User) error {

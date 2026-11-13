@@ -87,12 +87,13 @@ type customAttributeWidget struct {
 }
 
 type chatInitReq struct {
-	DeliveryID  string                 `json:"delivery_id"`
-	BrowserKey  string                 `json:"browser_key"`
-	Message     string                 `json:"message"`
-	Subject     string                 `json:"subject"`
-	FormData    map[string]any         `json:"form_data"`
-	Attachments attachment.Attachments `json:"-"`
+	DeliveryID     string                 `json:"delivery_id"`
+	BrowserKey     string                 `json:"browser_key"`
+	Message        string                 `json:"message"`
+	Subject        string                 `json:"subject"`
+	FormData       map[string]any         `json:"form_data"`
+	VisitorProfile *visitorProfile        `json:"visitor_profile,omitempty"`
+	Attachments    attachment.Attachments `json:"-"`
 }
 
 type handoffFormReq struct {
@@ -224,6 +225,9 @@ func handleChatInit(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.somethingWentWrong"), nil, envelope.GeneralError)
 	}
 	initialConfig := resolveInitialChatConfig(config, getWidgetIsVisitor(r))
+	if req.VisitorProfile != nil && (!getWidgetIsVisitor(r) || req.DeliveryID != "") {
+		return sendErrorEnvelope(r, visitorProfileDenied())
+	}
 
 	if req.DeliveryID != "" {
 		return handleWidgetCampaignReply(r, req, inbox, initialConfig)
@@ -245,6 +249,11 @@ func handleChatInit(r *fastglue.Request) error {
 			return sendErrorEnvelope(r, err)
 		}
 		contactID = visitor.ID
+	}
+	if req.VisitorProfile != nil {
+		if err := saveWidgetVisitorProfile(app, contactID, isVisitor, req.VisitorProfile); err != nil {
+			return sendErrorEnvelope(r, err)
+		}
 	}
 
 	// Check conversation permissions based on user type.

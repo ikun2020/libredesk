@@ -313,6 +313,16 @@ INSERT INTO users (email, type, first_name, last_name, custom_attributes, phone_
 VALUES ($1, 'visitor', $2, $3, $4, $5, $6)
 RETURNING *;
 
+-- name: update-visitor-profile
+-- Browser-supplied profile data must never update a verified contact, even if
+-- its former visitor session is still present during a concurrent upgrade.
+UPDATE users
+SET email = $2,
+    custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $3::jsonb,
+    updated_at = now()
+WHERE id = $1 AND type = 'visitor' AND enabled = TRUE
+    AND deleted_at IS NULL AND external_user_id IS NULL;
+
 -- name: update-last-login-at
 UPDATE users
 SET last_login_at = now(),

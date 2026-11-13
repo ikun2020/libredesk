@@ -123,6 +123,7 @@ type queries struct {
 	DeleteOrphanedContact            *sqlx.Stmt `query:"delete-orphaned-contact"`
 	InsertNote                       *sqlx.Stmt `query:"insert-note"`
 	InsertVisitor                    *sqlx.Stmt `query:"insert-visitor"`
+	UpdateVisitorProfile             *sqlx.Stmt `query:"update-visitor-profile"`
 	GetVisitorByEmail                *sqlx.Stmt `query:"get-visitor-by-email"`
 	UpgradeVisitorToContact          *sqlx.Stmt `query:"upgrade-visitor-to-contact"`
 	ToggleEnable                     *sqlx.Stmt `query:"toggle-enable"`

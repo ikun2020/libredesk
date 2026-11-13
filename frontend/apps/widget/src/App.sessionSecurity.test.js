@@ -5,13 +5,19 @@ import { createApp, nextTick, reactive } from 'vue'
 const api = vi.hoisted(() => ({ exchangeJWTForSession: vi.fn(), getAuthMe: vi.fn() }))
 const saveSession = vi.hoisted(() => vi.fn())
 const usesSecureIntegration = vi.hoisted(() => vi.fn(() => true))
+const usesVisitorProfileIntegration = vi.hoisted(() => vi.fn(() => false))
+const setVisitorProfile = vi.hoisted(() => vi.fn())
+const clearVisitorProfile = vi.hoisted(() => vi.fn())
+const flushVisitorProfile = vi.hoisted(() => vi.fn())
 const widget = reactive({ config: {}, isDark: false, branding: {}, currentView: 'chat' })
 const user = reactive({ userSessionToken: 'old-session', isVisitor: false })
 const chat = reactive({ drafts: {}, conversations: [], currentConversation: null })
 const help = reactive({ reset: vi.fn(), load: vi.fn() })
 const proactive = reactive({ reset: vi.fn(), setSessionKey: vi.fn(), setBrowserKey: vi.fn() })
 
-vi.mock('@widget/api/index.js', () => ({ default: api, saveSession, usesSecureIntegration, setApiSessionToken: vi.fn(), initVisitorToken: vi.fn(), registerStores: vi.fn() }))
+vi.mock('@widget/api/index.js', () => ({ default: api, saveSession, usesSecureIntegration, usesVisitorProfileIntegration,
+  setVisitorProfile, clearVisitorProfile, flushVisitorProfile,
+  setApiSessionToken: vi.fn(), initVisitorToken: vi.fn(), registerStores: vi.fn() }))
 vi.mock('@widget/store/widget.js', () => ({ useWidgetStore: () => widget }))
 vi.mock('@widget/store/chat.js', () => ({ useChatStore: () => chat }))
 vi.mock('@widget/store/user.js', () => ({ useUserStore: () => user }))
@@ -38,6 +44,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   api.exchangeJWTForSession.mockReset().mockResolvedValue(response())
   usesSecureIntegration.mockReturnValue(true)
+  usesVisitorProfileIntegration.mockReturnValue(false)
   Object.assign(chat, {
     drafts: { thread: '尚未发送的正文' }, preChatDraft: { message: 'first draft' }, handoffDraft: {},
     conversations: [{ uuid: 'thread' }], currentConversation: { uuid: 'thread' },
@@ -129,4 +136,25 @@ test.each(['SET_JWT_TOKEN', 'REFRESH_JWT_TOKEN'])('secure %s refuses a server re
   await message(type, { jwt: 'identity.jwt' })
   expect(saveSession).not.toHaveBeenCalled()
   expect(parent.postMessage).toHaveBeenCalledWith({ type: 'SECURE_AUTH_UNAVAILABLE' }, 'https://panel.example.test')
+})
+
+test('only a lite iframe accepts a profile from its exact parent origin', async () => {
+  const profile = { email: 'user@example.test', contact_custom_attributes: { xboard_plan: 'Basic' } }
+  await message('SET_VISITOR_PROFILE', { profile })
+  expect(setVisitorProfile).not.toHaveBeenCalled()
+  usesVisitorProfileIntegration.mockReturnValue(true)
+  await message('SET_VISITOR_PROFILE', { profile }, 'https://attacker.example.test')
+  expect(setVisitorProfile).not.toHaveBeenCalled()
+  const drafts = chat.drafts
+  await message('SET_VISITOR_PROFILE', { profile })
+  expect(setVisitorProfile).toHaveBeenCalledExactlyOnceWith(profile)
+  expect(chat.drafts).toBe(drafts)
+  expect(api.exchangeJWTForSession).not.toHaveBeenCalled()
+})
+
+test('clearing or upgrading identity discards unsigned reference data', async () => {
+  await message('CLEAR_SESSION')
+  expect(clearVisitorProfile).toHaveBeenCalledOnce()
+  await message('SET_JWT_TOKEN', { jwt: 'new-user.jwt' })
+  expect(clearVisitorProfile).toHaveBeenCalledTimes(2)
 })
