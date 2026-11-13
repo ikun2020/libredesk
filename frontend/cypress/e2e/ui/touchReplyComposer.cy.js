@@ -12,6 +12,21 @@ const emulatePointer = (pointer) => cy.then(() =>
   })
 )
 
+const standaloneViewport = (win) => {
+  const state = {
+    hidden: false,
+    viewport: Object.assign(new win.EventTarget(), {
+      width: win.innerWidth, height: win.innerHeight, scale: 1,
+      offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0
+    })
+  }
+  // Use Safari's standalone flag; pointer media queries still come from CDP.
+  Object.defineProperty(win.navigator, 'standalone', { configurable: true, value: true })
+  Object.defineProperty(win.document, 'hidden', { configurable: true, get: () => state.hidden })
+  Object.defineProperty(win, 'visualViewport', { configurable: true, value: state.viewport })
+  return state
+}
+
 const expectInlineLayout = (viewportHeight) => {
   editor().should('have.length', 1).should(($editor) => {
     expect($editor.closest('[role="dialog"]'), 'composer stays inline').to.have.length(0)
@@ -184,6 +199,82 @@ describe('Reply composer on touch screens', () => {
     editor().should('contain.text', `${draft} continued in fullscreen`)
     expectInlineLayout(700)
     sendReply(`${draft} continued in fullscreen`)
+  })
+
+  it('realigns the unfolded standalone inbox after resume without resetting the list scroll', () => {
+    let state
+    let pane
+    emulatePointer('coarse')
+    cy.intercept('GET', '**/api/v1/conversations/all?*').as('loadInbox')
+    cy.visit('/inboxes/all', {
+      onBeforeLoad(win) { state = standaloneViewport(win) }
+    })
+    cy.wait('@loadInbox')
+    cy.get('.app-shell h1').should('be.visible')
+    cy.get('.app-shell .overscroll-contain:visible').first().then(($pane) => {
+      pane = $pane[0]
+      // Make the inner pane scrollable independently of the test database size.
+      const content = pane.ownerDocument.createElement('div')
+      content.style.height = '1600px'
+      pane.append(content)
+      pane.scrollTop = 160
+    })
+    cy.window().then((win) => {
+      state.hidden = true
+      win.document.dispatchEvent(new win.Event('visibilitychange'))
+      state.viewport.height = 500
+      state.viewport.dispatchEvent(new win.Event('resize'))
+      expect(win.document.documentElement.style.getPropertyValue('--visual-viewport-height')).to.eq('900px')
+
+      // Reproduce a restored document scroll independently of pane scrolling.
+      win.document.body.style.minHeight = '1400px'
+      win.scrollTo(0, 84)
+      expect(win.scrollY, 'document is displaced before recovery').to.eq(84)
+      expect(win.document.querySelector('.app-shell').getBoundingClientRect().top).to.eq(-84)
+
+      state.hidden = false
+      win.document.dispatchEvent(new win.Event('visibilitychange'))
+      // The final dimensions arrive after the foreground event, with no resize.
+      state.viewport.height = 800
+    })
+    cy.get('.app-shell').should(($shell) => {
+      const rect = $shell[0].getBoundingClientRect()
+      expect(rect.top, 'root returns to the top').to.eq(0)
+      expect(rect.height, 'late viewport measurement is applied').to.eq(800)
+      expect(pane.scrollTop, 'list retains its own position').to.eq(160)
+    })
+    cy.window().then((win) => {
+      win.document.body.style.removeProperty('min-height')
+      state.viewport.height = 700
+    })
+    cy.viewport(390, 700)
+    cy.get('.app-shell').should(($shell) => {
+      expect($shell[0].getBoundingClientRect().top).to.eq(0)
+      expect($shell[0].getBoundingClientRect().height).to.eq(700)
+    })
+  })
+
+  it('keeps the same focused inline draft when a standalone app resumes with its keyboard', () => {
+    let state
+    let editableNode
+    const draft = 'Reply retained across background restore'
+    openConversation('coarse', { beforeLoad(win) { state = standaloneViewport(win) } })
+    editor().click('center', { scrollBehavior: false }).type(draft, { scrollBehavior: false })
+    editor().then(($editor) => { editableNode = $editor[0] })
+    cy.window().then((win) => {
+      cy.spy(win, 'scrollTo').as('rootScroll')
+      state.hidden = true
+      win.document.dispatchEvent(new win.Event('visibilitychange'))
+      state.viewport.height = 0
+      state.viewport.dispatchEvent(new win.Event('resize'))
+      state.hidden = false
+      state.viewport.height = 400
+      win.document.dispatchEvent(new win.Event('visibilitychange'))
+    })
+    cy.then(() => expectSameFocusedEditor(editableNode, draft))
+    expectInlineLayout(400)
+    cy.get('@rootScroll').should('not.have.been.called')
+    sendReply(draft)
   })
 
   it('keeps a wide desktop composer inline when the viewport height changes', () => {
