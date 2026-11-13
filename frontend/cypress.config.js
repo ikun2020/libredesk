@@ -8,6 +8,9 @@ export default defineConfig({
   e2e: {
     specPattern: 'cypress/e2e/**/*.{cy,spec}.{js,jsx,ts,tsx}',
     baseUrl: 'http://localhost:9000',
+    // Preserve the widget's iframe guard: rewriting `window.parent === window`
+    // to `window.self === window` suppresses real session-cookie postMessages.
+    modifyObstructiveCode: false,
     async setupNodeEvents(on) {
       // The app reaches this stand-in Graph API when whatsapp.api_url points at this port.
       await start(metaMockPort)
