@@ -45,9 +45,26 @@ jobs:
         with:
           package_json_file: frontend/package.json
 
+      - name: Resolve application version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            # Forks may have no release tags. Only use an upstream tag that
+            # is reachable from this commit, so old code still reports updates.
+            git fetch --no-tags https://github.com/abhinavxd/libredesk.git \
+              '+refs/tags/v*:refs/tags/upstream/v*'
+            upstream_tag="$(git describe --tags --match 'upstream/v[0-9]*' --abbrev=0 HEAD)"
+            version="${upstream_tag#upstream/}+git.$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Application version: $version"
+
       - name: Build application and embedded assets
         env:
-          LIBREDESK_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          LIBREDESK_VERSION: ${{ steps.version.outputs.version }}
         run: |
           make build
           ./libredesk --version
@@ -83,7 +100,12 @@ jobs:
           cache-from: type=gha,scope=libredesk-amd64
 
       - name: Verify image starts
-        run: docker run --rm libredesk:smoke-test ./libredesk --version
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          actual_version="$(docker run --rm libredesk:smoke-test ./libredesk --version)"
+          echo "$actual_version"
+          test "${actual_version%% *}" = "$EXPECTED_VERSION"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
@@ -108,10 +130,12 @@ jobs:
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           {
             echo '### Published Docker image (linux/amd64)'
             echo '```text'
+            echo "Application version: $APP_VERSION"
             echo "$IMAGE_TAGS"
             echo "Digest: $IMAGE_DIGEST"
             echo '```'
