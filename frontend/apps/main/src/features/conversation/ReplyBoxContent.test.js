@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 
 const editorFocus = vi.fn()
+let sendFromEditor
 const conversationStore = reactive({
   current: { uuid: 'conversation-1', inbox_channel: 'livechat' },
   getMacro: () => ({ actions: [] })
@@ -21,9 +22,12 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key) => key }) }))
 vi.mock('@main/api', () => ({ default: {} }))
 vi.mock('@main/components/editor/ConversationEditor.vue', () => ({
   default: {
-    setup(_, { expose }) {
+    props: ['sendOnEnter'],
+    emits: ['send'],
+    setup(editorProps, { expose, emit }) {
       expose({ focus: editorFocus })
-      return () => h('div', { contenteditable: true })
+      sendFromEditor = () => emit('send')
+      return () => h('div', { contenteditable: true, 'data-send-on-enter': editorProps.sendOnEnter })
     }
   }
 }))
@@ -43,6 +47,7 @@ let app
 let host
 let instance
 let props
+const onSend = vi.fn()
 
 const settle = async () => {
   await nextTick()
@@ -67,7 +72,7 @@ const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
   host = document.createElement('div')
   document.body.append(host)
   app = createApp({
-    render: () => h(ReplyBoxContent, { ...props, ref: (value) => { instance = value } })
+    render: () => h(ReplyBoxContent, { ...props, onSend, ref: (value) => { instance = value } })
   })
   app.config.globalProperties.$t = (key) => key
   app.mount(host)
@@ -76,6 +81,7 @@ const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
 
 beforeEach(() => {
   editorFocus.mockClear()
+  onSend.mockClear()
   conversationStore.current.uuid = 'conversation-1'
 })
 
@@ -130,5 +136,40 @@ describe('reply editor focus', () => {
     await settle()
     expect(editorFocus).toHaveBeenCalledOnce()
     expect(document.activeElement).toBe(input)
+  })
+})
+
+describe('reply editor sending', () => {
+  it.each([false, true])('enables Enter sending only on desktop (touch: %s)', async (touch) => {
+    await mount({ touch })
+    expect(host.querySelector('[contenteditable]').getAttribute('data-send-on-enter')).toBe(String(!touch))
+  })
+
+  it('blocks empty, uploading and in-flight replies from the keyboard, then sends valid content', async () => {
+    await mount()
+    sendFromEditor()
+    await settle()
+    expect(onSend).not.toHaveBeenCalled()
+
+    props.htmlContent = '<p>Reply</p>'
+    props.textContent = 'Reply'
+    props.uploadingFiles = [{ name: 'attachment.png' }]
+    await settle()
+    sendFromEditor()
+    await settle()
+    expect(onSend).not.toHaveBeenCalled()
+
+    props.uploadingFiles = []
+    props.isSending = true
+    await settle()
+    sendFromEditor()
+    await settle()
+    expect(onSend).not.toHaveBeenCalled()
+
+    props.isSending = false
+    await settle()
+    sendFromEditor()
+    await settle()
+    expect(onSend).toHaveBeenCalledOnce()
   })
 })

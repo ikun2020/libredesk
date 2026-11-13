@@ -531,6 +531,7 @@
   "editor.addLinkUrl": "添加链接 URL",
   "editor.editLinkUrl": "编辑链接 URL",
   "editor.hint.full": "Shift + Enter 添加新行。Ctrl + Enter 发送。Ctrl + K 打开命令栏。",
+  "editor.hint.enterToSend": "Enter 发送。Shift + Enter 换行。Ctrl + K 打开命令栏。",
   "editor.hint.newLineCtrlK": "Shift + Enter 添加新行。Ctrl + K 打开命令栏。",
   "editor.hint.newLineSend": "Shift + Enter 添加新行。Ctrl + Enter 发送。",
   "editor.newLine": "Shift + Enter 添加新行。",

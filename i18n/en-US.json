@@ -872,6 +872,7 @@
   "editor.editLinkUrl": "Edit link URL",
   "editor.heading": "Heading {level}",
   "editor.hint.full": "Shift + Enter to add a new line. Ctrl + Enter to send. Ctrl + K to open command bar.",
+  "editor.hint.enterToSend": "Enter to send. Shift + Enter to add a new line. Ctrl + K to open command bar.",
   "editor.hint.newLineCtrlK": "Shift + Enter to add a new line. Ctrl + K to open command bar.",
   "editor.hint.newLineSend": "Shift + Enter to add a new line. Ctrl + Enter to send.",
   "editor.invalidYoutubeUrl": "Enter a valid YouTube video URL.",

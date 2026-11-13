@@ -66,6 +66,16 @@ describe('Composer drafts', () => {
     checkSaved('Email', (draft) => expect(draft).to.eq(null))
   })
 
+  it('sends from the desktop email body with Enter and inserts a newline with Shift+Enter', () => {
+    visitDraft()
+    panel().find('.tiptap.ProseMirror[contenteditable="true"]').type('{end}{shift+enter}Second line')
+    cy.get('@send.all').should('have.length', 0)
+    panel().find('.tiptap.ProseMirror[contenteditable="true"]').type('{enter}')
+    cy.wait('@send').its('request.body.content').should('include', 'Draft message<br>Second line')
+    cy.get('@send.all').should('have.length', 1)
+    panel().should('not.exist')
+  })
+
   it('validates visible recipients on submit and permits sending after removing an invalid row', () => {
     visitDraft()
     panel().contains('button', /^CC$/).click()

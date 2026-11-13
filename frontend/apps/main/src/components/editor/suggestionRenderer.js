@@ -35,7 +35,10 @@ export function createSuggestionRenderer(ListComponent) {
         if (popup) popup.style.display = 'none'
         return true
       }
-      return component?.ref?.onKeyDown(props) ?? false
+      const handled = component?.ref?.onKeyDown(props) ?? false
+      // Enter belongs to the active suggestion, even while its async results
+      // are loading or empty. Never fall through to sending the message.
+      return props.event.key === 'Enter' || handled
     },
 
     onExit: () => {

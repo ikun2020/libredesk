@@ -1,6 +1,7 @@
 import { ref, watch, onUnmounted } from 'vue'
 import { useEditor } from '@tiptap/vue-3'
 import { useInlineImageUpload } from '@main/composables/useInlineImageUpload'
+import { MessageSend } from './messageSendExtension'
 
 export function useTextEditor({
   extensions,
@@ -15,6 +16,7 @@ export function useTextEditor({
   enableMentions = () => false,
   getConversationSuggestions = null,
   conversationReferencesEnabled = () => false,
+  sendOnEnter = () => false,
   onSend = () => {},
   onToggleMessageType = null,
   onUpdate = () => {},
@@ -47,7 +49,7 @@ export function useTextEditor({
   }
 
   const editor = useEditor({
-    extensions,
+    extensions: [...extensions, MessageSend.configure({ sendOnEnter, onSend })],
     autofocus: autoFocus,
     editable,
     content: htmlContent.value,
@@ -64,7 +66,7 @@ export function useTextEditor({
           event.stopPropagation()
           return false
         }
-        if (event.ctrlKey && event.key === 'Enter') {
+        if (!sendOnEnter() && event.ctrlKey && event.key === 'Enter') {
           onSend()
           return true
         }

@@ -107,6 +107,23 @@ describe('Reply composer on touch screens', () => {
     })
   }
 
+  it('sends a desktop reply with Enter and keeps Shift+Enter for a newline', () => {
+    openConversation('fine')
+    cy.intercept('POST', `**/conversations/${conversationUuid}/messages`).as('sendReply')
+    editor().type('First line{shift+enter}Second line')
+    editor().find('br').should('exist')
+    cy.get('@sendReply.all').should('have.length', 0)
+
+    editor().type('{enter}')
+    cy.wait('@sendReply').then(({ request, response }) => {
+      expect(response.statusCode).to.eq(200)
+      expect(request.body.message).to.include('First line<br>Second line')
+      expect(request.body.private).to.eq(false)
+    })
+    cy.get('@sendReply.all').should('have.length', 1)
+    editor().should('have.text', '')
+  })
+
   for (const { name, width, height, minimized } of [
     { name: 'unfolded', width: 1280, height: 900, minimized: false },
     { name: 'narrow', width: 390, height: 700, minimized: true }

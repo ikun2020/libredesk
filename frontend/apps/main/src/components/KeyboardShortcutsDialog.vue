@@ -35,6 +35,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@shared-ui/components/ui/dialog'
 
@@ -47,6 +48,7 @@ defineProps({
 defineEmits(['update:open'])
 
 const { t } = useI18n()
+const isTouchPrimary = useMediaQuery('(pointer: coarse)')
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = isMac ? '⌘' : 'Ctrl'
@@ -82,7 +84,7 @@ const groups = computed(() => [
       { label: t('actions.openMacros'), keys: [mod, 'M'] },
       { label: t('shortcuts.toggleReplyType'), keys: [mod, 'P'] },
       { label: t('shortcuts.minimizeReplyBox'), keys: [alt, 'M'] },
-      { label: t('actions.sendReply'), keys: ['Ctrl', 'Enter'] },
+      { label: t('actions.sendReply'), keys: isTouchPrimary.value ? ['Ctrl', 'Enter'] : ['Enter'] },
       { label: t('globals.terms.bold'), keys: [mod, 'B'] },
       { label: t('globals.terms.italic'), keys: [mod, 'I'] }
     ]

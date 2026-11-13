@@ -226,9 +226,14 @@
             <Editor
               v-model:htmlContent="componentField.modelValue"
               @update:htmlContent="(value) => componentField.onChange(value)"
-              :placeholder="isCramped ? t('globals.terms.typeMessage') : t('editor.hint.newLineCtrlK')"
+              :placeholder="
+                isCramped
+                  ? t('globals.terms.typeMessage')
+                  : t(isTouchPrimary ? 'editor.hint.newLineCtrlK' : 'editor.hint.enterToSend')
+              "
               :insertContent="insertContent"
               :autoFocus="false"
+              :sendOnEnter="!isTouchPrimary"
               :enableInlineImages="true"
               class="w-full flex-1 overflow-y-auto min-h-0"
               @send="createConversation"
@@ -290,6 +295,7 @@ import {
 } from '@shared-ui/components/ui/form'
 import { z } from 'zod'
 import { ref, watch, onUnmounted, nextTick, onMounted, computed } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import ReplyBoxAttachmentPreview from '@/features/conversation/message/attachment/ReplyBoxAttachmentPreview.vue'
 import { useConversationStore } from '@/stores/conversation'
 import MacroActionsPreview from '@/features/conversation/MacroActionsPreview.vue'
@@ -341,6 +347,7 @@ const props = defineProps({
 const inboxStore = useInboxStore()
 const { t } = useI18n()
 const isCramped = useIsComposerCramped()
+const isTouchPrimary = useMediaQuery('(pointer: coarse)')
 const userStore = useUserStore()
 const emitter = useEmitter()
 const loading = ref(false)
@@ -501,6 +508,7 @@ const { searchResults, highlightedIndex, handleSearchContacts, handleSearchKeydo
   })
 
 const createConversation = form.handleSubmit(async (values) => {
+  if (isDisabled.value) return
   loading.value = true
   try {
     values.inbox_id = Number(values.inbox_id)

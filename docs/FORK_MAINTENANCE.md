@@ -197,6 +197,13 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 
 ## 同步日志
 
+### 2026-11-14：桌面消息发送快捷键
+
+- 桌面会话回复、私密备注及新建邮件正文使用 `Enter` 发送，`Shift+Enter` 换行；桌面消息框的旧 `Ctrl+Enter` 发送绑定移除，提示与快捷键帮助同步更新。
+- 通过显式 `sendOnEnter` 开关仅在上述消息框且非 coarse 主指针时开启。手机/DUO、知识库文章、宏、自动化及联系人备注编辑器保留原有换行行为。
+- `MessageSend` 在 @ 提及和 # 会话候选处理 Enter 后才发送；保留 Esc 关闭候选后发送，并避免输入法确认和按键重复导致误发。键盘发送遵守上传中、发送中及空回复限制。
+- 回归：`messageSendExtension.test.js` 检查真实编辑器按键及候选选择，`ReplyBoxContent.test.js` 检查设备开关与发送限制。
+
 | 日期 | 结果 |
 | --- | --- |
 | 2026-11-13 | 建立两项定制维护记录；功能基线 `a08ec969`，本次未执行上游同步。 |

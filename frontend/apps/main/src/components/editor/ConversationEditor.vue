@@ -42,6 +42,7 @@ const props = defineProps({
   messageType: String,
   autoFocus: { type: Boolean, default: true },
   disabled: { type: Boolean, default: false },
+  sendOnEnter: { type: Boolean, default: false },
   enableMentions: { type: Boolean, default: false },
   getSuggestions: { type: Function, default: null },
   enableConversationReferences: { type: Boolean, default: false },
@@ -92,6 +93,7 @@ const { editor, extractMentions, focus } = useTextEditor({
   enableMentions: () => props.enableMentions,
   getConversationSuggestions: props.getConversationSuggestions,
   conversationReferencesEnabled: () => props.enableConversationReferences,
+  sendOnEnter: () => props.sendOnEnter,
   onSend: () => {
     emit('send')
     stopTyping()

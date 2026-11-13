@@ -169,10 +169,15 @@
         v-model:htmlContent="htmlContent"
         v-model:textContent="textContent"
         :message-type="messageType"
-        :placeholder="isCramped ? t('globals.terms.typeMessage') : t('editor.hint.full')"
+        :placeholder="
+          isCramped
+            ? t('globals.terms.typeMessage')
+            : t(isTouchPrimary ? 'editor.hint.full' : 'editor.hint.enterToSend')
+        "
         :insertContent="insertContent"
         :autoFocus="false"
         :disabled="isDraftLoading"
+        :sendOnEnter="!isTouchPrimary"
         :enableMentions="messageType === 'private_note'"
         :enableConversationReferences="messageType === 'private_note'"
         :enableInlineImages="conversationStore.current.inbox_channel === 'email'"
@@ -472,6 +477,7 @@ const validateBeforeSend = async () => {
  */
 const handleSend = async () => {
   if (!(await validateBeforeSend())) return
+  if (!enableSend.value || props.isSending) return
   emit('send')
 }
 
