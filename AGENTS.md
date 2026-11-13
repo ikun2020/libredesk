@@ -1,31 +1,31 @@
-# Fork maintenance
+# Working conventions
 
 This is the `ikun2020/libredesk` fork of `abhinavxd/libredesk`.
 
-Before modifying automation, the conversation composer, or syncing upstream, read
-[docs/FORK_MAINTENANCE.md](docs/FORK_MAINTENANCE.md). It records the user's
-required customizations, their commits, affected files, and regression checks.
+## Everyday changes
 
-- Preserve content-based fixed replies for subsequent incoming messages. Match
-  the triggering message's text, including empty text, rather than a stale
-  conversation preview; keep automated replies from triggering loops.
-- Preserve the final iPhone DUO behavior: a directly editable inline composer at
-  the bottom of the conversation. Fullscreen is optional and explicit. Keyboard
-  or fold-related viewport changes must preserve the editor, focus, and draft.
-- The automatic fullscreen behavior introduced by `9fbed06e` was superseded by
-  `a08ec969`. Do not restore it while resolving conflicts.
-- Preserve the visitor widget's first-message attachments: the enabled upload
-  button is available before a conversation exists. Create the conversation with
-  the validated attachment as its first message, without placeholder text or an
-  empty conversation. Keep typed text drafts, upload permissions, and first-message
-  automation behavior intact.
-- Integrate upstream on a `codex/` branch, resolve conflicts by behavior, and run
-  the documented checks before publishing a code update. Do not discard fork
-  commits or force-reset the fork to upstream as a routine sync strategy.
-- If upstream implements an equivalent feature, adapt or retire duplicate code
-  while preserving the required behavior and regression coverage. Update the
-  maintenance record when paths, behavior, or sync results change.
-- Also retain this fork's GHCR workflow and application-version resolution.
+- Work on the requested change and validate the affected behavior. Choose tests
+  and builds according to the change's scope; expand checks when failures or
+  broader effects justify it.
+- Check for conflicts with upstream and apply the fork customization-preservation
+  checklist only when the user explicitly requests fork sync. Routine changes
+  still require normal, relevant testing and CI; the maintenance record does not
+  add a blanket full-regression requirement to everyday work.
+- Sync upstream only when the user explicitly requests it. A normal change or
+  image release is not an instruction to sync upstream.
+- Keep only `main` as a lasting local and fork branch. Routine changes can use
+  small commits directly on `main`. If a complex sync needs a temporary `codex/`
+  branch, remove it locally and on the fork after confirming it is merged.
+  Record commit SHAs for recovery instead of keeping backup branches.
+
+## Explicit upstream sync only
+
+When the user requests fork sync, upstream synchronization, or merging an
+upstream version, first read [docs/FORK_MAINTENANCE.md](docs/FORK_MAINTENANCE.md).
+Its customization history and full regression checklist apply to that sync.
+Resolve conflicts by the recorded behavior, retain the fork's changes and GHCR
+version handling, and update the sync record. Do not force-reset the fork to
+upstream or discard its commits as a routine sync strategy.
 
 Explicit user instructions in the current task take precedence over this record.
 

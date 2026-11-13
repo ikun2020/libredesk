@@ -1,6 +1,12 @@
 # LibreDesk fork 定制与同步记录
 
-记录日期：2026-11-13（Asia/Shanghai）。这是项目定制维护记录，供后续 fork sync、升级和冲突处理使用。最初两项定制及后续新增功能均按下文保留。
+记录日期：2026-11-13（Asia/Shanghai）。这是项目定制维护记录，供用户明确要求的 fork sync、同步上游或合并上游版本时使用。最初两项定制及后续新增功能的历史记录保留如下。
+
+## 适用范围
+
+仅在用户明确要求 fork sync、同步上游时，检查与上游的代码冲突，并读取、执行本文的定制保留清单及同步回归。日常功能修改、修复和镜像发布不自动进入同步流程，也不需要额外核对全部历史定制；仍按实际改动范围进行正常、必要的测试和 CI。本文不额外要求日常修改执行同步用的全量回归。
+
+长期只保留本地及 fork 的 `main` 分支。同步确需临时分支时，确认合入后删除本地和 fork 上的临时分支；用记录的提交 SHA 和 Git 历史回溯，不再保留长期备份分支。下文出现的旧分支名是历史记录。
 
 ## 仓库与功能基线
 
@@ -129,13 +135,13 @@
 
 目标是保留上游改进和上述定制行为，而不是永久冻结这些文件。GitHub 提示冲突时需要按语义合并；维护记录不能保证今后永远没有冲突。
 
-1. 读取本记录，检查工作区和远程地址，保留未提交工作。先记录同步前的 fork HEAD 并建立备份引用。
-2. 从最新 `origin/main` 创建 `codex/sync-upstream-日期` 分支，再合并原项目 `main`。记录本次上游 SHA。
+1. 读取本记录，检查工作区和远程地址，保留未提交工作。先记录同步前的 fork HEAD SHA，供后续通过 Git 历史回溯。
+2. 基于最新 `origin/main` 合并原项目 `main`。复杂同步需要隔离时，可创建临时 `codex/sync-upstream-日期` 分支。记录本次上游 SHA。
 3. 逐段解决冲突，检查以上行为与调用链，不能整文件盲选 ours/theirs。不要用重置到上游、丢弃 fork 提交或强制推送作为常规同步办法。
 4. 即使没有文本冲突，也运行下方回归。若上游已提供等价功能，可适配或移除重复实现，并保留行为与测试，避免执行两遍。
-5. 验证后按当前任务的发布要求合入 fork `main`；需要发布时等待 GHCR 构建和镜像验证成功。更新本记录的同步日志、路径及替代提交。
+5. 验证后按当前任务的发布要求合入 fork `main`；需要发布时等待 GHCR 构建和镜像验证成功。更新本记录的同步日志、路径及替代提交。确认临时分支已合入后，删除其本地及 fork 远程分支，最终仅保留 `main`。
 
-命令示意，`YYYYMMDD` 应替换为本次同步日期，重复同步时另加唯一后缀。在仓库目录执行；先确保工作区干净：
+需要临时分支时的命令示意，`YYYYMMDD` 应替换为本次同步日期，重复同步时另加唯一后缀。在仓库目录执行；先确保工作区干净，并保存输出的同步前与上游提交 SHA：
 
 ```sh
 git status --short
@@ -145,14 +151,15 @@ git remote add upstream https://github.com/abhinavxd/libredesk.git
 git fetch origin
 git fetch upstream
 git switch -c codex/sync-upstream-YYYYMMDD origin/main
-git branch codex/backup-before-sync-YYYYMMDD
 git rev-parse HEAD upstream/main
 git merge --no-ff upstream/main
 ```
 
 记录建立时只有 `origin`；2026-11-13 首次同步时已添加 `upstream`，指向上表中的原项目。若需退出尚未完成的合并，可使用 `git merge --abort`；不要丢弃用户工作。上述命令仅准备合并，不会自动发布。[Git 合并冲突处理文档](https://git-scm.com/docs/git-merge)
 
-## 同步后的回归清单
+## 用户要求同步上游后的回归清单
+
+本节只用于上游同步，不作为日常功能修改和发布的全量检查要求。
 
 - [ ] 自动化表单仍能保存“会话更新 + 收到消息 + 内容包含优惠券 + 固定回复123456”。
 - [ ] 首条消息、后续匹配消息、重新打开的会话行为正确；不匹配、空文本、自动发送消息不误触发或循环。
@@ -161,7 +168,7 @@ git merge --no-ff upstream/main
 - [ ] 展开状态下将 PWA 切到后台再恢复，根布局重新对齐顶部并使用恢复后的高度；列表内部位置、输入焦点与草稿保留，捏合缩放不被重置。浏览器模拟通过后仍需真机复测系统恢复行为。
 - [ ] 手动全屏往返保留草稿；桌面焦点、收起偏好、邮件和附件正常。
 - [ ] 访客首条可直接发附件；取消或无效文件不创建会话，上传成功保留文字草稿，失败可重试，后续消息沿用同一会话。
-- [ ] 保留并运行上述单元和 Cypress 回归；通过现有 `Go` 与五分片 `CI` 工作流后发布功能更新。
+- [ ] 保留并运行上述单元和 Cypress 回归；通过现有 `Go` 与五分片 `CI` 工作流后发布本次上游同步。
 - [ ] 发布后核对镜像 revision/version 与本次功能提交相符，确认 `latest` 指向新镜像。
 
 本地定向检查（依赖版本以 `go.mod`、`frontend/package.json` 和锁文件为准；Go 数据库集成测试需要 PostgreSQL 与 `LIBREDESK_TEST_DB_DSN`，Cypress 需要运行中的后端和测试服务，可参照现有工作流配置）：
@@ -173,7 +180,7 @@ pnpm test:run
 pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/e2e/integration/livechat/keywordAutomation.cy.js,cypress/e2e/ui/touchReplyComposer.cy.js"
 ```
 
-环境不足时以配置好依赖的 GitHub Actions 验证，不应省略必需检查。建档时的功能基线已通过 Go、71 个前端单元测试文件（1,118 项测试）、五分片 Cypress，以及 WebKit 触屏组件检查；这不替代以后每次同步后的验证。
+同步验证所需环境不足时，以配置好依赖的 GitHub Actions 完成该同步的检查。建档时的功能基线已通过 Go、71 个前端单元测试文件（1,118 项测试）、五分片 Cypress，以及 WebKit 触屏组件检查；这不替代以后用户要求同步上游时的验证。
 
 ## 相关发布配置也需保留
 
@@ -189,3 +196,4 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 | --- | --- |
 | 2026-11-13 | 建立两项定制维护记录；功能基线 `a08ec969`，本次未执行上游同步。 |
 | 2026-11-13 | 从 fork `2fc1999c` 合并上游 `0c6fae86`（PR #823，锁定的 `vue-letter` 从 0.2.2 升级到 0.2.3）。无文本冲突；两项定制代码、回归测试和 GHCR 工作流均保持原样。同步分支 `codex/sync-upstream-20261113`；同步前本地备份 `codex/backup-before-sync-20261113`。 |
+| 2026-11-13 | 按用户澄清，仅在明确要求 fork sync 时进行上游冲突检查及定制保留核查；日常修改仍做正常必要验证，不套用同步清单。长期仅保留 `main`，停止保留备份分支。 |
