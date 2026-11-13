@@ -7,6 +7,8 @@ on:
 
 jobs:
   release:
+    # Forks publish to their own GHCR namespace using docker.yml.
+    if: github.repository == 'abhinavxd/libredesk'
     runs-on: ubuntu-latest
     permissions:
       contents: write

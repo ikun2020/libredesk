@@ -65,6 +65,29 @@ __________________
 
 ### Docker
 
+#### GitHub Container Registry (this fork)
+
+The [Docker image workflow](https://github.com/ikun2020/libredesk/actions/workflows/docker.yml)
+builds the application and publishes a Linux `amd64` image to
+`ghcr.io/ikun2020/libredesk`. It runs on pushes to `main`, `v*` tags, and manually
+from **Actions → Docker image → Run workflow**. It uses the repository's
+`GITHUB_TOKEN`; no Docker Hub credentials or extra secrets are required.
+
+The `latest` and `main` tags track the default branch. Version tags retain their
+name (for example, `v1.2.3`), and each build also has a `sha-<commit>` tag.
+Publishing a version tag does not change `latest`.
+
+```shell
+docker pull ghcr.io/ikun2020/libredesk:latest
+```
+
+To use this image with the Compose file below, set the `app` service's `image` to
+`ghcr.io/ikun2020/libredesk:latest`. GHCR packages are private on first publication;
+for pulls without authentication, change the package's visibility to **Public**
+in its GitHub package settings. Otherwise, authenticate to `ghcr.io` before pulling.
+
+#### Upstream Docker Hub image
+
 The latest image is available on DockerHub at [`libredesk/libredesk:latest`](https://hub.docker.com/r/libredesk/libredesk/tags?page=1&ordering=last_updated&name=latest)
 
 ```shell
