@@ -12,7 +12,7 @@
   "diagnostics.copyFailed": "复制失败，请改用下载 JSON 文件。",
   "diagnostics.recalculate": "重新计算显示区域（测试）",
   "diagnostics.recalculationRequested": "已请求浏览器重新计算。请等一秒，检查界面是否恢复，再复制报告。",
-  "diagnostics.recalculationUnavailable": "暂时无法测试。请从正常界面开始录制，保持手机展开，切后台并返回，收起键盘后再试。",
+  "diagnostics.recalculationUnavailable": "当前条件不适合执行重算。请直接复制报告，未执行的原因已记录，无需重新录制。",
   "account.avatarRemoved": "已移除头像",
   "account.changeAvatar": "在此更改您的头像。",
   "account.cropAvatar": "裁剪头像",

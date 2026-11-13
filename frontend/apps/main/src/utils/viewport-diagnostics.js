@@ -137,27 +137,68 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     recalculation = null
   }
 
+  const isStandaloneTouch = () =>
+    (win.navigator.standalone === true || win.matchMedia('(display-mode: standalone)').matches) &&
+    win.matchMedia('(pointer: coarse)').matches
+
+  const fitsLayoutViewport = () => {
+    const viewport = win.visualViewport
+    // A standalone orientation transition can leave a sub-unit scale while
+    // all layout/visual widths still agree. Distinguish that state from pinch
+    // zoom by the geometry, without forcing or restricting the user's scale.
+    return viewport && viewport.scale > 0 && viewport.scale < 1 && isStandaloneTouch() &&
+      Number.isFinite(viewport.width) && viewport.width > 0 &&
+      Math.abs(viewport.width - win.innerWidth) < 1 &&
+      Math.abs(viewport.width - doc.documentElement.clientWidth) < 1 &&
+      viewport.offsetTop === 0 && viewport.offsetLeft === 0 &&
+      win.scrollX === 0 && win.scrollY === 0
+  }
+
+  const isUnzoomedViewport = () => win.visualViewport?.scale === 1 || fitsLayoutViewport()
+
+  const rejectRecalculation = reason => {
+    // Fixed internal reason codes only. Do not use capture(): a rejected attempt
+    // must not replace a healthy baseline or a previously accepted experiment.
+    report.lastViewportRecalculationAttempt = {
+      accepted: false, reason, snapshot: snapshot('viewport-recalculate:rejected')
+    }
+    return false
+  }
+
   // A separately invoked, bounded experiment, never a lifecycle recovery.
   // Request the previously observed minimum viewport height, then restore the
   // exact metadata. The browser may ignore this; only the report can show its effect.
   const recalculateViewport = () => {
-    if (!active || recalculation || doc.hidden || isEditable(doc.activeElement)) return false
+    if (!active) return false
+    if (recalculation) return rejectRecalculation('busy')
+    if (doc.hidden) return rejectRecalculation('hidden')
+    if (isEditable(doc.activeElement)) return rejectRecalculation('editing')
     const viewport = win.visualViewport
     const baseline = report.settledBaseline || report.baseline
     const meta = doc.querySelector('meta[name="viewport"]')
     const original = meta?.getAttribute('content')
     const targetHeight = Math.round(baseline?.visualViewport?.height)
-    if (!(win.navigator.standalone === true || win.matchMedia('(display-mode: standalone)').matches) ||
-      !win.matchMedia('(pointer: coarse)').matches || !viewport || viewport.scale !== 1 ||
-      viewport.offsetTop !== 0 || viewport.offsetLeft !== 0 || win.scrollY !== 0 || win.scrollX !== 0 ||
-      baseline.hidden || baseline.editableFocused || baseline.visualViewport?.scale !== 1 ||
-      !Number.isFinite(targetHeight) || targetHeight < 1 || targetHeight > 10000 ||
-      !Number.isFinite(viewport.height) || viewport.height <= 0 || targetHeight <= viewport.height ||
-      !Number.isFinite(viewport.width) || viewport.width <= 0 ||
-      Math.abs(baseline.visualViewport.width - viewport.width) >= 1 ||
+    if (!isStandaloneTouch()) return rejectRecalculation('not-standalone-touch')
+    if (!viewport) return rejectRecalculation('viewport-unavailable')
+    if (!isUnzoomedViewport()) return rejectRecalculation('zoomed')
+    if (viewport.offsetTop !== 0 || viewport.offsetLeft !== 0 || win.scrollY !== 0 || win.scrollX !== 0) {
+      return rejectRecalculation('viewport-panned')
+    }
+    if (baseline.hidden || baseline.editableFocused || baseline.visualViewport?.scale !== 1) {
+      return rejectRecalculation('baseline-unusable')
+    }
+    if (!Number.isFinite(targetHeight) || targetHeight < 1 || targetHeight > 10000 ||
+      !Number.isFinite(viewport.height) || viewport.height <= 0 ||
+      !Number.isFinite(viewport.width) || viewport.width <= 0) {
+      return rejectRecalculation('invalid-measurement')
+    }
+    if (targetHeight <= viewport.height) return rejectRecalculation('no-height-loss')
+    if (Math.abs(baseline.visualViewport.width - viewport.width) >= 1 ||
       Math.abs(win.innerWidth - viewport.width) >= 1 ||
-      baseline.orientation.type !== (win.screen.orientation?.type ?? null) ||
-      !original || /(?:^|[,;\s])height\s*=/i.test(original)) return false
+      baseline.orientation.type !== (win.screen.orientation?.type ?? null)) {
+      return rejectRecalculation('geometry-changed')
+    }
+    if (!original || /(?:^|[,;\s])height\s*=/i.test(original)) return rejectRecalculation('metadata-unavailable')
 
     const result = {
       manual: true, requestedHeight: targetHeight, metaRestored: false, interrupted: false,
@@ -165,6 +206,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     }
     report.viewportRecalculation = result
     result.before = capture('viewport-recalculate:before')
+    report.lastViewportRecalculationAttempt = { accepted: true, reason: 'accepted', snapshot: result.before }
     let restoreFrame = null
     let restoreTimer = null
     let afterTimer = null
@@ -228,7 +270,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     report = {
       schema: 1, version: String(version), userAgent: win.navigator.userAgent,
       baseline: snapshot('baseline'), settledBaseline: null, beforeBackground: null,
-      viewportRecalculation: null, samples: []
+      viewportRecalculation: null, lastViewportRecalculationAttempt: null, samples: []
     }
     if (!report.baseline.hidden) lastVisible = report.baseline
     listen(doc, 'visibilitychange', () => {
@@ -249,7 +291,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     listen(win, 'focus', event => { if (event.target === win) settle('focus') })
     listen(win, 'resize', () => throttled('resize'))
     listen(win.visualViewport, 'resize', () => {
-      if (win.visualViewport.scale !== 1) cancelRecalculation()
+      if (!isUnzoomedViewport()) cancelRecalculation()
       throttled('viewport-resize')
     })
     listen(win.visualViewport, 'scroll', () => throttled('viewport-scroll'))

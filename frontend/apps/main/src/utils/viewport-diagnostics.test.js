@@ -238,17 +238,20 @@ describe('opt-in viewport diagnostic recorder', () => {
 describe('manual viewport recalculation experiment', () => {
   const originalContent = 'width=device-width, initial-scale=1, interactive-widget=resizes-visual'
   let meta
+  let clientWidth
 
-  const prepare = () => {
-    vi.stubGlobal('innerWidth', 900)
+  const prepare = ({ width = 900, height = 700, resumedHeight = 620, settleMs = 1000 } = {}) => {
+    vi.stubGlobal('innerWidth', width)
+    clientWidth = vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(width)
+    Object.assign(viewport, { width, height })
     meta = document.createElement('meta')
     meta.setAttribute('name', 'viewport')
     meta.setAttribute('content', originalContent)
     meta.setAttribute('data-original', 'preserved')
     document.head.append(meta)
     recorder.start()
-    vi.advanceTimersByTime(1000)
-    viewport.height = 620
+    vi.advanceTimersByTime(settleMs)
+    viewport.height = resumedHeight
   }
 
   afterEach(() => {
@@ -269,7 +272,13 @@ describe('manual viewport recalculation experiment', () => {
     expect(recorder.recalculateViewport()).toBe(true)
     expect(meta.content).toBe(`${originalContent}, height=700`)
     expect(meta.content).not.toMatch(/user-scalable|maximum-scale|minimum-scale/)
+    expect(read().lastViewportRecalculationAttempt).toMatchObject({
+      accepted: true, reason: 'accepted', snapshot: { visualViewport: { height: 620 } }
+    })
+    const acceptedBefore = read().viewportRecalculation.before
     expect(recorder.recalculateViewport()).toBe(false)
+    expect(read().lastViewportRecalculationAttempt).toMatchObject({ accepted: false, reason: 'busy' })
+    expect(read().viewportRecalculation.before).toEqual(acceptedBefore)
     expect(read().viewportRecalculation).toMatchObject({
       manual: true, requestedHeight: 700, metaRestored: false,
       before: { visualViewport: { height: 620 } }, after: null
@@ -282,11 +291,69 @@ describe('manual viewport recalculation experiment', () => {
     expect(read().viewportRecalculation).toMatchObject({
       interrupted: false, after: { reason: 'viewport-recalculate:after', visualViewport: { height: 700 } }
     })
+    expect(read().viewportRecalculation.before).toEqual(acceptedBefore)
     expect(read().settledBaseline.visualViewport.height).toBe(700)
     expect(input.value).toBe('PRIVATE-DRAFT')
     expect(document.activeElement).toBe(document.body)
     expect(scroll).not.toHaveBeenCalled()
     expect(recorder.exportReport()).not.toContain(originalContent)
+  })
+
+  it('accepts the reported 867x669 to 867x587 transition at scale 0.912 without a hidden event', () => {
+    prepare({ width: 867, height: 669, resumedHeight: 587 })
+    viewport.scale = 0.912
+    expect(read().beforeBackground).toBeNull()
+    expect(recorder.recalculateViewport()).toBe(true)
+    expect(meta.content).toBe(`${originalContent}, height=669`)
+    viewport.dispatchEvent(new Event('resize'))
+    expect(read().viewportRecalculation.interrupted).toBe(false)
+    vi.advanceTimersByTime(1200)
+    expect(meta.content).toBe(originalContent)
+    expect(read().viewportRecalculation).toMatchObject({
+      requestedHeight: 669, metaRestored: true, interrupted: false,
+      before: { visualViewport: { width: 867, height: 587, scale: 0.912 } },
+      after: { visualViewport: { width: 867, height: 587, scale: 0.912 } }
+    })
+  })
+
+  it.each(['visual width', 'layout width'])(
+    'rejects sub-unit pinch zoom when its %s differs from the window', mode => {
+      prepare({ width: 867, height: 669, resumedHeight: 587 })
+      viewport.scale = 0.912
+      if (mode === 'visual width') viewport.width = 951
+      else clientWidth.mockReturnValue(951)
+      expect(recorder.recalculateViewport()).toBe(false)
+      expect(meta.content).toBe(originalContent)
+      expect(read().lastViewportRecalculationAttempt).toMatchObject({ accepted: false, reason: 'zoomed' })
+      expect(read().viewportRecalculation).toBeNull()
+    }
+  )
+
+  it('restores metadata if a matching sub-unit scale becomes a real pinch during the experiment', () => {
+    prepare({ width: 867, height: 669, resumedHeight: 587 })
+    viewport.scale = 0.912
+    expect(recorder.recalculateViewport()).toBe(true)
+    viewport.width = 951
+    viewport.dispatchEvent(new Event('resize'))
+    expect(meta.content).toBe(originalContent)
+    expect(read().viewportRecalculation).toMatchObject({ metaRestored: true, interrupted: true, after: null })
+    vi.advanceTimersByTime(2000)
+    expect(read().viewportRecalculation.after).toBeNull()
+  })
+
+  it('records a rejected snapshot without promoting it into the settled baseline', () => {
+    prepare({ settleMs: 0 })
+    const now = window.performance.now()
+    vi.spyOn(window.performance, 'now').mockReturnValue(now + 1500)
+    viewport.scale = 2
+    expect(recorder.recalculateViewport()).toBe(false)
+    expect(read().settledBaseline).toBeNull()
+    expect(read().baseline.visualViewport.height).toBe(700)
+    expect(read().lastViewportRecalculationAttempt).toMatchObject({
+      accepted: false, reason: 'zoomed',
+      snapshot: { reason: 'viewport-recalculate:rejected', elapsedMs: 1500, visualViewport: { scale: 2 } }
+    })
+    expect(recorder.exportReport()).not.toMatch(/PRIVATE|contenteditable|data-original/)
   })
 
   it('restores the original metadata within 250ms when animation frames do not run', () => {
@@ -323,10 +390,14 @@ describe('manual viewport recalculation experiment', () => {
     }
   )
 
-  it.each(['zoom', 'folded width', 'keyboard focus', 'hidden', 'existing height', 'browser tab', 'short baseline'])(
-    'rejects an unsafe or inconclusive experiment with %s', mode => {
+  it.each([
+    ['zoom', 'zoomed'], ['folded width', 'geometry-changed'], ['keyboard focus', 'editing'],
+    ['hidden', 'hidden'], ['existing height', 'metadata-unavailable'],
+    ['browser tab', 'not-standalone-touch'], ['short baseline', 'no-height-loss']
+  ])(
+    'rejects an unsafe or inconclusive experiment with %s', (mode, reason) => {
       prepare()
-      if (mode === 'zoom') viewport.scale = 0.912
+      if (mode === 'zoom') viewport.scale = 2
       if (mode === 'folded width') viewport.width = 466
       if (mode === 'keyboard focus') document.querySelector('input').focus()
       if (mode === 'hidden') hidden.mockReturnValue(true)
@@ -341,6 +412,7 @@ describe('manual viewport recalculation experiment', () => {
       expect(recorder.recalculateViewport()).toBe(false)
       expect(meta.outerHTML).toBe(unchanged)
       expect(read().viewportRecalculation).toBeNull()
+      expect(read().lastViewportRecalculationAttempt).toMatchObject({ accepted: false, reason })
     }
   )
 })

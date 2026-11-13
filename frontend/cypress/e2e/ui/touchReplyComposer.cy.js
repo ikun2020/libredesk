@@ -253,7 +253,21 @@ describe('Reply composer on touch screens', () => {
           'body includes the pan space instead of clipping the shell').to.eq(669)
       })
       cy.then(() => expectSameFocusedEditor(editableNode, draft))
-      expectInlineLayout(337)
+      // At this short height the history stays pinned to its newest content,
+      // so an older message's text can legitimately be above its scroll window.
+      // Check the history's usable viewport instead of requiring that specific
+      // old message to be scrolled back into view automatically.
+      cy.contains('[data-message-uuid] .native-html', visitorMessage)
+        .closest('.overscroll-contain')
+        .should(($history) => {
+          const history = $history[0]
+          const rect = history.getBoundingClientRect()
+          expect(rect.height, 'space remains for chat history').to.be.at.least(48)
+          expect(rect.top, 'history starts inside the viewport').to.be.at.least(0)
+          expect(rect.bottom, 'history stays above the keyboard').to.be.at.most(338)
+          expect(history.scrollHeight, 'older messages remain scrollable').to.be.greaterThan(history.clientHeight)
+          expectHitTarget($history)
+        })
       // A correct bounding box can still be hidden by overflow on an ancestor.
       // Hit-test both controls and use real actions without forced clicks or
       // automatic scrolling that could conceal that regression.

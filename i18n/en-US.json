@@ -12,7 +12,7 @@
   "diagnostics.copyFailed": "Could not copy. Download the JSON file instead.",
   "diagnostics.recalculate": "Recalculate display area (test)",
   "diagnostics.recalculationRequested": "Requested a browser recalculation. Wait one second, check whether the layout recovered, then copy the report.",
-  "diagnostics.recalculationUnavailable": "Test unavailable. Start recording with a normal layout, keep the phone unfolded, background and return to the app, then dismiss the keyboard and try again.",
+  "diagnostics.recalculationUnavailable": "Recalculation is unavailable under the current conditions. Copy the report; the reason has been recorded. No need to start a new recording.",
   "account.avatarRemoved": "Avatar removed",
   "account.changeAvatar": "Change your avatar here.",
   "account.cropAvatar": "Crop avatar",
