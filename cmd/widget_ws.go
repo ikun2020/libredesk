@@ -74,6 +74,8 @@ type safeConn struct {
 
 	rateMu sync.Mutex
 	lastAt map[string]time.Time
+	// Owned by the reader goroutine, set on a successful session join.
+	sessionToken string
 }
 
 // WriteJSON and WriteMessage set a deadline first; a peer that stops reading would otherwise block the caller while holding sc.mu.
@@ -97,6 +99,13 @@ func (sc *safeConn) WriteMessage(msgType int, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (sc *safeConn) writeSessionMessage(app *App, token string, data []byte) error {
+	if !widgetSessionActive(app, token) {
+		return fmt.Errorf("widget session is no longer valid")
+	}
+	return sc.WriteMessage(websocket.TextMessage, data)
 }
 
 // allow throttles abusive clients that flood typing/page_visit/ping frames.
@@ -153,6 +162,9 @@ func handleWidgetWS(r *fastglue.Request) error {
 				app.lo.Debug("widget websocket connection closed", "error", err)
 				break
 			}
+			if msg.Type != WidgetMsgTypeJoin && sc.sessionToken != "" && !widgetSessionActive(app, sc.sessionToken) {
+				return
+			}
 
 			switch msg.Type {
 			case WidgetMsgTypeJoin:
@@ -167,6 +179,7 @@ func handleWidgetWS(r *fastglue.Request) error {
 					client.CloseChannel()
 				}
 				client, liveChat, inboxUUID, userID = nil, nil, "", 0
+				sc.sessionToken = ""
 
 				joinedClient, joinedLiveChat, joinedInboxUUID, joinedUserID, err := handleInboxJoin(app, sc, msg.Data, msg.Token, clientIP)
 				if err != nil {
@@ -283,8 +296,15 @@ func handleInboxJoin(app *App, sc *safeConn, data json.RawMessage, token, client
 			}
 		}()
 		for msgData := range client.Channel {
-			if err := sc.WriteMessage(websocket.TextMessage, msgData); err != nil {
-				app.lo.Error("error forwarding message to widget client", "error", err)
+			if client.IsClosed() {
+				return
+			}
+			if err := sc.writeSessionMessage(app, token, msgData); err != nil {
+				app.lo.Debug("widget message forwarding stopped", "error", err)
+				client.CloseChannel()
+				// The reader checks this flag and validates every incoming frame.
+				// Do not expire a shared connection here: this may be an old
+				// forwarder finishing while the same socket re-joins a new user.
 				return
 			}
 		}
@@ -300,6 +320,7 @@ func handleInboxJoin(app *App, sc *safeConn, data json.RawMessage, token, client
 	}
 
 	app.lo.Debug("widget client joined live chat", "user_id", userIDStr, "inbox_uuid", joinData.InboxID)
+	sc.sessionToken = token
 
 	return client, liveChat, joinData.InboxID, user.ID, nil
 }
@@ -333,11 +354,9 @@ func handleWidgetPageVisit(app *App, data json.RawMessage, contactID int) {
 		return
 	}
 
-	visit.URL = stringutil.TruncateUTF8(visit.URL, 2048 /* maxBytes */)
+	visit.URL = sanitizeWidgetPageURL(visit.URL)
 	visit.Title = stringutil.TruncateUTF8(visit.Title, 256 /* maxBytes */)
-
-	parsedURL, err := url.Parse(visit.URL)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+	if visit.URL == "" {
 		return
 	}
 
@@ -380,6 +399,10 @@ func handleWidgetPageVisit(app *App, data json.RawMessage, contactID int) {
 	for _, e := range entries {
 		var p map[string]string
 		if err := json.Unmarshal([]byte(e), &p); err == nil {
+			p["url"] = sanitizeWidgetPageURL(p["url"])
+			if p["url"] == "" {
+				continue
+			}
 			pages = append(pages, p)
 		}
 	}
@@ -398,8 +421,30 @@ func getPageVisitsFromRedis(app *App, contactID int) []map[string]string {
 	for _, e := range entries {
 		var p map[string]string
 		if err := json.Unmarshal([]byte(e), &p); err == nil {
+			p["url"] = sanitizeWidgetPageURL(p["url"])
+			if p["url"] == "" {
+				continue
+			}
 			pages = append(pages, p)
 		}
 	}
 	return pages
+}
+
+// Query strings and hash routes can contain login links or subscription tokens.
+// Sanitize both newly received visits and older entries read from Redis.
+func sanitizeWidgetPageURL(raw string) string {
+	if len(raw) > 16384 {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Opaque != "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return stringutil.TruncateUTF8(parsed.String(), 2048)
 }

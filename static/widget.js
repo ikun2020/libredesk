@@ -55,7 +55,7 @@
             this.previewHost = null;
             this.campaignData = null;
             this.campaignActiveSeconds = 0;
-            this.campaignURL = location.href;
+            this.campaignURL = config.trackPageVisits === false ? '' : location.href;
             this.campaignPageGeneration = 0;
             this.campaignEvent = "";
             this.campaignDelay = 0;
@@ -186,7 +186,7 @@
 
         async fetchWidgetSettings () {
             try {
-                const response = await fetch(`${this.config.baseURL}/api/v1/widget/chat/settings/launcher?inbox_id=${this.config.inboxID}`);
+                const response = await fetch(`${this.config.baseURL}/api/v1/widget/chat/settings/launcher?inbox_id=${this.config.inboxID}`, { referrerPolicy: 'no-referrer' });
 
                 if (!response.ok) {
                     throw new Error(`Error fetching widget settings. Status: ${response.status}`);
@@ -264,6 +264,7 @@
             const iconTransition = `opacity ${this.OPEN_MS}ms ${this.EASE_OUT}, transform ${this.OPEN_MS}ms ${this.EASE_OUT}`;
 
             this.defaultIcon = document.createElement('img');
+            this.defaultIcon.referrerPolicy = 'no-referrer';
             this.defaultIcon.alt = '';
             this.defaultIcon.src = branding.launcher?.logo_url || (this.config.baseURL + DEFAULT_LAUNCHER_LOGO_PATH);
             this.defaultIcon.style.transition = iconTransition;
@@ -330,10 +331,15 @@
             this.widgetButtonWrapper = widgetButtonWrapper;
 
             this.iframe = document.createElement('iframe');
+            this.iframe.referrerPolicy = 'no-referrer';
+            if (this.config.secureIntegration) {
+                this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads');
+            }
             this.iframe.id = `libredesk-widget-${this.config.inboxID}`;
             this.toggleButton.setAttribute('aria-controls', this.iframe.id);
             this.iframe.src = `${this.config.baseURL}/widget?inbox_id=${encodeURIComponent(this.config.inboxID)}&parent_origin=${encodeURIComponent(window.location.origin)}` +
-                (this.language ? `&lang=${encodeURIComponent(this.language)}` : '');
+                (this.language ? `&lang=${encodeURIComponent(this.language)}` : '') +
+                (this.config.secureIntegration && this.config.userJWT ? '&integration=1' : '');
             this.iframeLanguage = this.language;
             this.iframe.title = 'libredesk';
             this.iframe.style.cssText = `
@@ -428,6 +434,7 @@
         }
 
         sendPageInfo () {
+            if (this.config.trackPageVisits === false) return;
             this.postToIframe({
                 type: 'PAGE_VISIT',
                 url: window.location.href,
@@ -494,6 +501,7 @@
 
             switch (event.data.type) {
                 case 'SHOW_CAMPAIGN':
+                    if (this.config.trackPageVisits === false) break;
                     if (event.data.url !== location.href || event.data.pageGeneration !== this.campaignPageGeneration || this.isChatVisible || this.unreadCount > 0 || this.hideLauncher) {
                         this.dropCampaign(event.data.delivery.id);
                         break;
@@ -758,6 +766,8 @@
         }
 
         startPageTracking () {
+            if (this.config.trackPageVisits === false) return;
+            this.stopPageTracking();
             this._lastPageURL = '';
             this._origPushState = history.pushState;
             this._origReplaceState = history.replaceState;
@@ -872,6 +882,7 @@
                 try { url = new URL(src, this.config.baseURL); } catch { return null; }
                 if (!['https:', 'http:'].includes(url.protocol)) return null;
                 const img = document.createElement('img');
+                img.referrerPolicy = 'no-referrer';
                 img.src = url.href;
                 img.alt = '';
                 img.className = className;
@@ -927,6 +938,7 @@
         }
 
         resetCampaignPage () {
+            if (this.config.trackPageVisits === false) return;
             if (location.href === this.campaignURL) return;
             this.campaignURL = location.href;
             this.campaignPageGeneration++;
@@ -940,6 +952,7 @@
         }
 
         startCampaignTracking () {
+            if (this.config.trackPageVisits === false) return;
             if (this.campaignInterval) return;
             let last = performance.now();
             this.campaignGap = Math.max(this.CAMPAIGN_POLL_MIN, this.campaignDelay);
@@ -960,6 +973,7 @@
         }
 
         trackEvent (name) {
+            if (this.config.trackPageVisits === false) return;
             this.resetCampaignPage();
             if (typeof name === 'string' && name.length <= 128) this.campaignEvent = name;
         }

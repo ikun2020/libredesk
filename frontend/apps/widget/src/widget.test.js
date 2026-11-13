@@ -219,3 +219,60 @@ describe('opening proactive messages', () => {
     expect(widget.postToIframe).toHaveBeenCalledExactlyOnceWith({ type: 'WIDGET_OPENED' })
   })
 })
+
+describe('private integration embedding', () => {
+  test('does not send page URLs, titles or campaign context when tracking is disabled', () => {
+    window.history.replaceState({}, '', '/account?token=secret#verification=hidden')
+    widget.config.trackPageVisits = false
+    const pushState = window.history.pushState
+    const replaceState = window.history.replaceState
+    widget.sendPageInfo()
+    widget.startPageTracking()
+    widget.startCampaignTracking()
+    widget.trackEvent('payment-page')
+    vi.advanceTimersByTime(60_000)
+    expect(widget.postToIframe).not.toHaveBeenCalled()
+    expect(window.history.pushState).toBe(pushState)
+    expect(window.history.replaceState).toBe(replaceState)
+    expect(widget.campaignEvent).toBe('')
+  })
+
+  test('applies a sandbox and suppresses referrers before attaching the integration iframe', () => {
+    widget.config.secureIntegration = true
+    widget.config.userJWT = 'signed-identity'
+    widget.widgetSettings = { launcher: { position: 'right', spacing: { side: 20, bottom: 20 } } }
+    widget.createElements()
+    try {
+      expect(widget.iframe.referrerPolicy).toBe('no-referrer')
+      expect(widget.defaultIcon.referrerPolicy).toBe('no-referrer')
+      expect(widget.iframe.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-forms allow-popups allow-downloads')
+      expect(new URL(widget.iframe.src).searchParams.get('integration')).toBe('1')
+      expect(widget.iframe.src).not.toContain('signed-identity')
+    } finally {
+      widget.iframe.remove()
+      widget.widgetButtonWrapper.remove()
+    }
+  })
+
+  test('requests for page information cannot bypass the privacy setting', () => {
+    widget.config.trackPageVisits = false
+    const contentWindow = {}
+    widget.iframe = { contentWindow }
+    widget.handleMessage({ source: contentWindow, origin: window.location.origin, data: { type: 'REQUEST_PAGE_INFO' } })
+    expect(widget.postToIframe).not.toHaveBeenCalled()
+  })
+
+  test('guest iframes keep sandbox isolation but retain normal visitor expiry handling', () => {
+    widget.config.secureIntegration = true
+    widget.config.userJWT = ''
+    widget.widgetSettings = { launcher: { position: 'right', spacing: { side: 20, bottom: 20 } } }
+    widget.createElements()
+    try {
+      expect(new URL(widget.iframe.src).searchParams.has('integration')).toBe(false)
+      expect(widget.iframe.getAttribute('sandbox')).toContain('allow-scripts')
+    } finally {
+      widget.iframe.remove()
+      widget.widgetButtonWrapper.remove()
+    }
+  })
+})

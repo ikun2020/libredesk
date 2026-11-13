@@ -2,6 +2,11 @@ import axios from 'axios'
 
 let _sessionToken = ''
 let _visitorToken = ''
+let _sessionRefreshPending = false
+
+export function usesSecureIntegration() {
+  return new URLSearchParams(window.location.search).get('integration') === '1'
+}
 
 function postToParent(data) {
   if (!window.parent || window.parent === window) return
@@ -17,6 +22,7 @@ function getInboxIDFromQuery() {
 
 export function setApiSessionToken(token) {
   _sessionToken = token || ''
+  _sessionRefreshPending = false
 }
 
 export function setVisitorToken(token) {
@@ -46,6 +52,15 @@ export function registerStores(stores) {
 // Clears all session state, cookies, and closes widget on 401/session expiry.
 function handleSessionExpired() {
   if (!_stores) return
+  // A bounded integration lease can expire while the page is suspended. Ask the
+  // authenticated parent to renew it without erasing the same user's draft.
+  if (usesSecureIntegration() && window.parent !== window) {
+    if (!_sessionRefreshPending) {
+      _sessionRefreshPending = true
+      postToParent({ type: 'REFRESH_AUTH_SESSION' })
+    }
+    return
+  }
   const { userStore, chatStore, widgetStore } = _stores
   userStore.clearSessionToken()
   clearVisitorToken()
@@ -119,6 +134,15 @@ http.interceptors.response.use(
       if (reqAuth && reqAuth === `Bearer ${_sessionToken}`) {
         handleSessionExpired()
       }
+    }
+    // Consumers may log this error. Never expose identity/session credentials in
+    // Axios' attached config or serialized request body.
+    if (error.config) {
+      if (error.config.headers) {
+        delete error.config.headers.Authorization
+        delete error.config.headers['X-Libredesk-Visitor-Token']
+      }
+      if (error.config.url?.includes('/chat/auth/exchange')) error.config.data = '[redacted]'
     }
     return Promise.reject(error)
   }

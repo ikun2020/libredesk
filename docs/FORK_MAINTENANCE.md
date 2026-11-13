@@ -209,3 +209,10 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 | 2026-11-13 | 建立两项定制维护记录；功能基线 `a08ec969`，本次未执行上游同步。 |
 | 2026-11-13 | 从 fork `2fc1999c` 合并上游 `0c6fae86`（PR #823，锁定的 `vue-letter` 从 0.2.2 升级到 0.2.3）。无文本冲突；两项定制代码、回归测试和 GHCR 工作流均保持原样。同步分支 `codex/sync-upstream-20261113`；同步前本地备份 `codex/backup-before-sync-20261113`。 |
 | 2026-11-13 | 按用户澄清，仅在明确要求 fork sync 时进行上游冲突检查及定制保留核查；日常修改仍做正常必要验证，不套用同步清单。长期仅保留 `main`，停止保留备份分支。 |
+
+## 2026-11-14：XBoard 同步安全协议与插件 1.1.0
+
+- 接入说明见 [XBOARD_SECURITY.md](XBOARD_SECURITY.md)。插件最终入口按用户要求为 `/api/v1/support-sync/loader.js?v=1.1.0`；使用同源随包脚本，不采用默认远程脚本自动适配或独立远程引导方案。
+- 保留邮箱及余额、已用流量、总流量、到期时间、套餐同步和原 `site_id:用户ID` 联系人。新增每个面板登录范围的十分钟认证租期、独立退出能力、原子撤销与重放拦截；旧收件箱认证会话一次性迁移，不删除联系人/聊天。
+- WebSocket 收发检查撤销状态；后台恢复重新签发身份时保留同账号草稿，换号/退出忽略迟到响应。插件不采集网址/标题，通用访问记录过滤查询参数与片段，错误日志去除凭据。
+- 后续升级须保留安全握手和 `/chat/security`、`/chat/auth/revoke`、`/chat/auth/revoke-legacy` 协议及对应 Go/Vitest 回归。未更改触屏编辑器、关键词自动回复和桌面 Enter 发送行为。
