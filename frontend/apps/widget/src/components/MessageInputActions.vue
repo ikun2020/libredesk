@@ -6,7 +6,7 @@
       ref="fileInput"
       @change="handleFileUpload"
       :accept="fileUploadEnabled ? '*/*' : ''"
-      :disabled="!fileUploadEnabled"
+      :disabled="!fileUploadEnabled || !canUploadFiles || uploading || disabled"
     />
 
     <Button
@@ -14,12 +14,21 @@
       v-if="fileUploadEnabled && canUploadFiles"
       @click="triggerFileUpload"
       :disabled="uploading || disabled"
+      :aria-busy="uploading || undefined"
       :aria-label="$t('globals.messages.attachFile')"
       variant="ghost"
       size="sm"
       class="h-8 w-8 p-0 hover:bg-muted/50 border-0"
     >
-      <Paperclip class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+      <LoaderCircle
+        v-if="uploading"
+        class="h-4 w-4 animate-spin text-muted-foreground"
+        aria-hidden="true"
+      />
+      <Paperclip v-else class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+      <span v-if="uploading" class="sr-only" role="status">{{
+        $t('globals.messages.uploading')
+      }}</span>
     </Button>
 
     <div class="relative">
@@ -64,7 +73,7 @@
 import { ref, defineAsyncComponent } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { Button } from '@shared-ui/components/ui/button'
-import { Smile, Paperclip } from 'lucide-vue-next'
+import { Smile, Paperclip, LoaderCircle } from 'lucide-vue-next'
 
 const EmojiPicker = defineAsyncComponent(async () => {
   const [mod] = await Promise.all([import('vue3-emoji-picker'), import('vue3-emoji-picker/css')])
@@ -111,13 +120,20 @@ onClickOutside(
 )
 
 const triggerFileUpload = () => {
-  if (fileInput.value && props.fileUploadEnabled && !props.uploading) {
+  if (
+    fileInput.value &&
+    props.fileUploadEnabled &&
+    props.canUploadFiles &&
+    !props.uploading &&
+    !props.disabled
+  ) {
     fileInput.value.value = ''
     fileInput.value.click()
   }
 }
 
 const handleFileUpload = (event) => {
+  if (!props.fileUploadEnabled || !props.canUploadFiles || props.uploading || props.disabled) return
   const files = event.target.files
   if (files && files.length > 0) {
     emit('fileUpload', files)

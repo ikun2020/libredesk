@@ -1173,8 +1173,10 @@ func (m *Manager) isVisitorUpgradeSafe(conversation models.Conversation) bool {
 	return true
 }
 
-// ProcessIncomingLiveChatMessage handles incoming live chat messages.
-func (m *Manager) ProcessIncomingLiveChatMessage(msg models.Message) (models.Message, error) {
+// InsertLiveChatMessage stores a live chat message and its attachments without
+// running incoming hooks. Initial messages and existing-conversation replies
+// must invoke those hooks with their respective isNewConversation value.
+func (m *Manager) InsertLiveChatMessage(msg models.Message) (models.Message, error) {
 	// Upload message attachments.
 	if err := m.uploadMessageAttachments(&msg); err != nil {
 		return models.Message{}, fmt.Errorf("uploading message attachments: %w", err)
@@ -1182,6 +1184,15 @@ func (m *Manager) ProcessIncomingLiveChatMessage(msg models.Message) (models.Mes
 
 	// Insert message.
 	if err := m.InsertMessage(&msg); err != nil {
+		return models.Message{}, err
+	}
+	return msg, nil
+}
+
+// ProcessIncomingLiveChatMessage handles incoming messages in existing live chats.
+func (m *Manager) ProcessIncomingLiveChatMessage(msg models.Message) (models.Message, error) {
+	var err error
+	if msg, err = m.InsertLiveChatMessage(msg); err != nil {
 		return models.Message{}, err
 	}
 

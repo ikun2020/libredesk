@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/abhinavxd/libredesk/internal/attachment"
 	"github.com/abhinavxd/libredesk/internal/conversation/models"
 	"github.com/abhinavxd/libredesk/internal/envelope"
 	"github.com/abhinavxd/libredesk/internal/inbox/channel/livechat/proactive"
 )
 
-func (m *Manager) CreateProactiveConversation(delivery proactive.Delivery, contactID int, reply string, attrs, meta map[string]any, maxConversations int, window time.Duration) (models.Message, error) {
+func (m *Manager) CreateProactiveConversation(delivery proactive.Delivery, contactID int, reply string, attachments attachment.Attachments, attrs, meta map[string]any, maxConversations int, window time.Duration) (models.Message, error) {
 	var snapshot proactive.Snapshot
 	if err := json.Unmarshal(delivery.Snapshot, &snapshot); err != nil {
 		return models.Message{}, envelope.NewError(envelope.GeneralError, m.i18n.T("globals.messages.somethingWentWrong"), nil)
@@ -53,13 +54,16 @@ func (m *Manager) CreateProactiveConversation(delivery proactive.Delivery, conta
 	invitationMeta, _ := json.Marshal(map[string]any{"proactive_sender": snapshot.Sender, "campaign_id": delivery.CampaignID})
 	messages := []models.Message{
 		{Type: models.MessageOutgoing, Status: models.MessageStatusSent, SenderID: snapshot.SenderID, SenderType: models.SenderTypeAgent, Content: snapshot.Message, Meta: invitationMeta},
-		{Type: models.MessageIncoming, Status: models.MessageStatusReceived, SenderID: contactID, SenderType: models.SenderTypeContact, Content: reply},
+		{Type: models.MessageIncoming, Status: models.MessageStatusReceived, SenderID: contactID, SenderType: models.SenderTypeContact, Content: reply, Attachments: attachments},
 	}
 	inlineUUIDs := make([][]string, len(messages))
 	for i := range messages {
 		messages[i].ConversationID = id
 		messages[i].ConversationUUID = uuid
 		messages[i].ContentType = models.ContentTypeText
+		if err := m.uploadMessageAttachments(&messages[i]); err != nil {
+			return models.Message{}, m.proactiveError(err)
+		}
 		uuids, err := m.InsertMessageTx(tx, &messages[i])
 		if err != nil {
 			return models.Message{}, err

@@ -3,7 +3,7 @@
     <ReplyButtons
       v-if="quickReplies.length"
       :replies="quickReplies"
-      :disabled="isSending"
+      :disabled="isSending || isUploading"
       align="end"
       class="px-2 pb-2"
       @select="sendQuickReply"
@@ -22,7 +22,7 @@
             @input="handleTyping"
             :aria-label="$t('globals.terms.typeMessage')"
             :placeholder="$t('globals.terms.typeMessage')"
-            :disabled="isSending"
+            :disabled="isSending || isUploading"
             maxlength="10000"
             class="w-full max-h-32 resize-none border-0 bg-transparent focus:ring-0 focus:outline-none focus-visible:ring-0 p-0 shadow-none"
             style="min-height: 20px; height: 20px"
@@ -37,8 +37,7 @@
             :fileUploadEnabled="config.features?.file_upload || false"
             :emojiEnabled="config.features?.emoji || false"
             :uploading="isUploading"
-            :canUploadFiles="!!chatStore.currentConversation?.uuid"
-            :disabled="isSending"
+            :disabled="isSending || isUploading"
             @fileUpload="handleFileUpload"
             @emojiSelect="handleEmojiSelect"
           />
@@ -122,8 +121,20 @@ const { startTyping, stopTyping } = useTypingIndicator((isTyping) => {
   }
 })
 
-const initChatConversation = async (messageText) => {
-  const resp = await api.initChatConversation({ message: messageText, ...proactive.replyPayload() })
+const initChatConversation = async (messageText, files = []) => {
+  const sourceDraftKey = draftKey.value
+  const unsentDraft = files.length ? newMessage.value : ''
+  const sourceDrafts = chatStore.drafts
+  const sourceSessionToken = userStore.userSessionToken
+  const sourceConversation = chatStore.currentConversation
+  const sourceDelivery = proactive.pending
+  const resp = await api.initChatConversation(
+    { message: messageText, ...proactive.replyPayload() },
+    files
+  )
+  // Identity resets replace drafts even when an anonymous session has no token.
+  // A completed upload must not restore the previous identity after a reset.
+  if (chatStore.drafts !== sourceDrafts || userStore.userSessionToken !== sourceSessionToken) return
   const {
     conversation,
     session_token,
@@ -142,10 +153,22 @@ const initChatConversation = async (messageText) => {
   // Add the new conversation to the list
   chatStore.addConversationToList(conversation)
 
-  // Update chat store with new conversation and messages.
-  chatStore.setCurrentConversation(conversation)
-  chatStore.replaceMessages(messages)
-  proactive.replied()
+  // Picking a file sends it immediately, but must not discard a typed text draft
+  // when its key changes from "new" (or a campaign ID) to the conversation UUID.
+  if (unsentDraft) {
+    chatStore.drafts[conversation.uuid] = unsentDraft
+    if (chatStore.drafts[sourceDraftKey] === unsentDraft) delete chatStore.drafts[sourceDraftKey]
+  }
+
+  // An upload may finish after the visitor has opened another conversation.
+  if (
+    chatStore.currentConversation === sourceConversation &&
+    proactive.pending === sourceDelivery
+  ) {
+    chatStore.setCurrentConversation(conversation)
+    chatStore.replaceMessages(messages)
+  }
+  if (proactive.pending === sourceDelivery) proactive.replied()
 }
 
 const sendMessageToConversation = async (messageText, tempMessageID) => {
@@ -170,7 +193,7 @@ const sendMessageToConversation = async (messageText, tempMessageID) => {
 
 const sendMessage = async () => {
   // Empty or already sending?
-  if (!newMessage.value.trim() || isSending.value) return
+  if (!newMessage.value.trim() || isSending.value || isUploading.value) return
 
   // Stop typing when sending message
   stopTyping()
@@ -193,7 +216,7 @@ const sendMessage = async () => {
   }
   try {
     isSending.value = true
-    if (!chatStore.currentConversation.uuid) {
+    if (!chatStore.currentConversation?.uuid) {
       await initChatConversation(messageText)
     } else {
       await sendMessageToConversation(messageText, tempMessageID)
@@ -214,6 +237,7 @@ const sendMessage = async () => {
 }
 
 const sendQuickReply = (reply) => {
+  if (isSending.value || isUploading.value) return
   newMessage.value = reply
   sendMessage()
 }
@@ -235,43 +259,48 @@ const handleKeydown = (event) => {
 
 // File upload handler
 const handleFileUpload = async (files) => {
-  if (!chatStore.currentConversation.uuid || files.length === 0) return
+  if (!config.value.features?.file_upload || !files?.length || isUploading.value || isSending.value)
+    return
 
+  const selectedFiles = Array.from(files)
+  const conversationUUID = chatStore.currentConversation?.uuid
   isUploading.value = true
+  stopTyping()
   emit('error', '')
 
-  // Create pending file message immediately
-  const fileNames = Array.from(files)
-    .map((f) => f.name)
-    .join(', ')
+  const fileNames = selectedFiles.map((f) => f.name).join(', ')
 
   const trimmedFileNames =
     fileNames.length > 40 ? fileNames.slice(0, 40).trimEnd() + '...' : fileNames
   const pendingMessage = `${trimmedFileNames}`
-  const tempMessageID = chatStore.addPendingMessage(
-    chatStore.currentConversation.uuid,
-    pendingMessage,
-    userStore.isVisitor ? 'visitor' : 'contact',
-    userStore.userID,
-    Array.from(files)
-  )
+  const tempMessageID = conversationUUID
+    ? chatStore.addPendingMessage(
+        conversationUUID,
+        pendingMessage,
+        userStore.isVisitor ? 'visitor' : 'contact',
+        userStore.userID,
+        selectedFiles
+      )
+    : null
 
   try {
-    const resp = await api.uploadMedia(chatStore.currentConversation.uuid, files)
+    if (!conversationUUID) {
+      await initChatConversation('', selectedFiles)
+      return
+    }
+
+    const resp = await api.uploadMedia(conversationUUID, selectedFiles)
 
     if (tempMessageID && resp.data.data) {
-      chatStore.replaceMessage(chatStore.currentConversation.uuid, tempMessageID, resp.data.data)
+      chatStore.replaceMessage(conversationUUID, tempMessageID, resp.data.data)
     }
     if (resp.data.data) {
-      chatStore.updateConversationListLastMessage(
-        chatStore.currentConversation.uuid,
-        resp.data.data
-      )
+      chatStore.updateConversationListLastMessage(conversationUUID, resp.data.data)
     }
   } catch (error) {
     // Remove failed upload message
     if (tempMessageID) {
-      chatStore.removeMessage(chatStore.currentConversation.uuid, tempMessageID)
+      chatStore.removeMessage(conversationUUID, tempMessageID)
     }
     emit('error', handleHTTPError(error).message)
   } finally {

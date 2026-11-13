@@ -132,7 +132,17 @@ const getLanguage = (lang) => http.get(`/api/v1/lang/${lang}`)
 const getAvailableLanguages = () => http.get('/api/v1/lang')
 const exchangeJWTForSession = (jwt) => http.post('/api/v1/widget/chat/auth/exchange', { jwt })
 const getAuthMe = () => http.get('/api/v1/widget/chat/auth/me')
-const initChatConversation = (data) => http.post('/api/v1/widget/chat/conversations/init', data)
+const initChatConversation = (data, files = []) => {
+  if (!files.length) return http.post('/api/v1/widget/chat/conversations/init', data)
+
+  const formData = new FormData()
+  formData.append('payload', JSON.stringify(data))
+  for (const file of files) formData.append('files', file)
+  return http.post('/api/v1/widget/chat/conversations/init', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000
+  })
+}
 const getChatConversations = () => http.get('/api/v1/widget/chat/conversations')
 const getChatConversation = (uuid) => http.get(`/api/v1/widget/chat/conversations/${uuid}`)
 const downloadTranscript = (uuid) =>

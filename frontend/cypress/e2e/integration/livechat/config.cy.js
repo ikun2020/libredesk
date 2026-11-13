@@ -84,9 +84,7 @@ describe('Live chat widget config applied end to end', () => {
       cy.openWidget(inbox)
       cy.widgetBody().contains(startText).click()
       cy.widgetBody().find('button[aria-label="Add emoji"]').should('exist')
-      // The attach button only renders once a conversation exists to upload against.
-      cy.widgetSend(`Message for upload ${Date.now()}`)
-      cy.widgetBody().find('button[aria-label="Attach file"]').should('exist')
+      cy.widgetBody().find('button[aria-label="Attach file"]').should('be.visible').and('not.be.disabled')
     })
 
     cy.createLivechatInbox(withStart({ features: { emoji: false, file_upload: false } })).then((inbox) => {

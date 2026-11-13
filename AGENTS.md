@@ -3,7 +3,7 @@
 This is the `ikun2020/libredesk` fork of `abhinavxd/libredesk`.
 
 Before modifying automation, the conversation composer, or syncing upstream, read
-[docs/FORK_MAINTENANCE.md](docs/FORK_MAINTENANCE.md). It records the user's two
+[docs/FORK_MAINTENANCE.md](docs/FORK_MAINTENANCE.md). It records the user's
 required customizations, their commits, affected files, and regression checks.
 
 - Preserve content-based fixed replies for subsequent incoming messages. Match
@@ -14,6 +14,11 @@ required customizations, their commits, affected files, and regression checks.
   or fold-related viewport changes must preserve the editor, focus, and draft.
 - The automatic fullscreen behavior introduced by `9fbed06e` was superseded by
   `a08ec969`. Do not restore it while resolving conflicts.
+- Preserve the visitor widget's first-message attachments: the enabled upload
+  button is available before a conversation exists. Create the conversation with
+  the validated attachment as its first message, without placeholder text or an
+  empty conversation. Keep typed text drafts, upload permissions, and first-message
+  automation behavior intact.
 - Integrate upstream on a `codex/` branch, resolve conflicts by behavior, and run
   the documented checks before publishing a code update. Do not discard fork
   commits or force-reset the fork to upstream as a routine sync strategy.

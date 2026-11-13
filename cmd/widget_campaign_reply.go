@@ -59,7 +59,7 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 		if err := canReply(r, conversation); err != nil {
 			return sendErrorEnvelope(r, err)
 		}
-		message := cmodels.Message{ConversationUUID: conversation.UUID, ConversationID: conversation.ID, SenderID: contact.ID, Type: cmodels.MessageIncoming, SenderType: cmodels.SenderTypeContact, Status: cmodels.MessageStatusReceived, Content: req.Message, ContentType: cmodels.ContentTypeText}
+		message := cmodels.Message{ConversationUUID: conversation.UUID, ConversationID: conversation.ID, SenderID: contact.ID, Type: cmodels.MessageIncoming, SenderType: cmodels.SenderTypeContact, Status: cmodels.MessageStatusReceived, Content: req.Message, ContentType: cmodels.ContentTypeText, Attachments: req.Attachments}
 		if _, err := app.conversation.ProcessIncomingLiveChatMessage(message); err != nil {
 			return sendErrorEnvelope(r, envelope.NewError(envelope.GeneralError, app.i18n.T("globals.messages.errorSendingMessage"), nil))
 		}
@@ -77,7 +77,7 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 			return sendErrorEnvelope(r, err)
 		}
 		meta := map[string]any{"ip": httputil.ClientIP(r.RequestCtx, app.clientIPHeader), "user_agent": string(r.RequestCtx.Request.Header.Peek("User-Agent")), "campaign_id": delivery.CampaignID}
-		reply, err := app.conversation.CreateProactiveConversation(delivery, contact.ID, req.Message, attrs, meta, maxChatConversationsPerContact, chatConversationRateLimitWindow)
+		reply, err := app.conversation.CreateProactiveConversation(delivery, contact.ID, req.Message, req.Attachments, attrs, meta, maxChatConversationsPerContact, chatConversationRateLimitWindow)
 		if err != nil {
 			if _, ok := err.(envelope.Error); ok {
 				return sendErrorEnvelope(r, err)

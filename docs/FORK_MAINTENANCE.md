@@ -1,6 +1,6 @@
 # LibreDesk fork 定制与同步记录
 
-记录日期：2026-11-13（Asia/Shanghai）。这是用户明确要求保留的项目维护记录，供后续 fork sync、升级和冲突处理使用。
+记录日期：2026-11-13（Asia/Shanghai）。这是项目定制维护记录，供后续 fork sync、升级和冲突处理使用。最初两项定制及后续新增功能均按下文保留。
 
 ## 仓库与功能基线
 
@@ -89,9 +89,43 @@
 
 触屏 Cypress 测试使用 CDP 真实触控模拟，同时影响 CSS 和 JavaScript 的媒体查询；不要退回只 stub `matchMedia` 的方式，否则无法验证触屏 CSS。浏览器模拟不能证明系统软键盘一定弹出，涉及输入布局的上游更新仍应在用户设备上复测 Safari/Chrome。
 
+## 3. 访客聊天首条消息发送附件
+
+实现分支：`codex/widget-first-attachment`，基于同步提交 `d5567eff`。发布与验证结果见该功能 PR。
+
+### 用户需要的行为
+
+- 收件箱开启文件上传时，新会话输入框立即显示附件按钮，不必先发送文字。
+- 保持原有“选择文件后立即上传发送”的交互，支持附件作为首条消息；取消选择不创建会话。
+- 首次附件发送成功后，已输入但尚未发送的文字迁移到新会话草稿，继续等待用户发送。
+- 上传期间禁用文字发送、快捷回复及重复选择；失败后恢复控件，可以重新选择同一个文件重试。
+
+### 合并时必须保留
+
+- 初始化接口继续兼容原有 JSON 文字请求，新增 multipart 请求使用 `payload` JSON 字段和 `files` 文件字段；无需先创建空白会话或发送占位文字。
+- 首条附件和后续附件执行相同的上传开关、文件大小、扩展名和空文件校验。无效附件在创建访客或会话之前被拒绝，不放宽身份与会话权限。
+- 保留预聊天表单、匿名/认证用户、主动邀请及禁止新建/重复会话的原有校验。
+- 附件必须真正存储并关联到首条消息；新会话自动化仍只执行首条消息钩子，不能把首附件误当成会话更新事件。
+- 上传过程中切换会话，完成或失败回调不能修改另一会话的消息与草稿。
+- 上传过程中退出或切换身份，旧初始化响应不能恢复旧身份的会话、登录状态或草稿。
+- PWA 右侧导航按钮方案已由用户取消，不属于本次功能，也未写入应用代码。
+
+### 文件与测试
+
+| 用途 | 路径（仓库相对） |
+| --- | --- |
+| 首条 multipart 请求 | `frontend/apps/widget/src/api/index.js` |
+| 首条附件入口、上传状态与草稿 | `frontend/apps/widget/src/components/MessageInput.vue`、`MessageInputActions.vue` |
+| 初始化和后续上传处理 | `cmd/chat.go`、`cmd/widget_upload.go` |
+| 主动邀请附件回复 | `cmd/widget_campaign_reply.go`、`internal/conversation/proactive.go` |
+| 附件存储与消息插入 | `internal/conversation/message.go` |
+| 组件回归 | `frontend/apps/widget/src/components/MessageInput.test.js` |
+| 上传校验回归 | `cmd/widget_upload_test.go` |
+| 端到端回归 | `frontend/cypress/e2e/integration/livechat/firstAttachment.cy.js`、`config.cy.js` |
+
 ## 同步上游的方法
 
-目标是保留上游改进和这两项行为，而不是永久冻结这些文件。GitHub 提示冲突时需要按语义合并；维护记录不能保证今后永远没有冲突。
+目标是保留上游改进和上述定制行为，而不是永久冻结这些文件。GitHub 提示冲突时需要按语义合并；维护记录不能保证今后永远没有冲突。
 
 1. 读取本记录，检查工作区和远程地址，保留未提交工作。先记录同步前的 fork HEAD 并建立备份引用。
 2. 从最新 `origin/main` 创建 `codex/sync-upstream-日期` 分支，再合并原项目 `main`。记录本次上游 SHA。
@@ -123,6 +157,7 @@ git merge --no-ff upstream/main
 - [ ] 展开和折起的触屏都默认底部直接输入；输入区空白点击、草稿、发送正常。
 - [ ] 键盘高度变化及仅 visual viewport 变化不更换编辑器节点；聊天记录、发送按钮仍可见。
 - [ ] 手动全屏往返保留草稿；桌面焦点、收起偏好、邮件和附件正常。
+- [ ] 访客首条可直接发附件；取消或无效文件不创建会话，上传成功保留文字草稿，失败可重试，后续消息沿用同一会话。
 - [ ] 保留并运行上述单元和 Cypress 回归；通过现有 `Go` 与五分片 `CI` 工作流后发布功能更新。
 - [ ] 发布后核对镜像 revision/version 与本次功能提交相符，确认 `latest` 指向新镜像。
 

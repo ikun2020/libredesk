@@ -8,10 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -85,11 +83,12 @@ type customAttributeWidget struct {
 }
 
 type chatInitReq struct {
-	DeliveryID string         `json:"delivery_id"`
-	BrowserKey string         `json:"browser_key"`
-	Message    string         `json:"message"`
-	Subject    string         `json:"subject"`
-	FormData   map[string]any `json:"form_data"`
+	DeliveryID  string                 `json:"delivery_id"`
+	BrowserKey  string                 `json:"browser_key"`
+	Message     string                 `json:"message"`
+	Subject     string                 `json:"subject"`
+	FormData    map[string]any         `json:"form_data"`
+	Attachments attachment.Attachments `json:"-"`
 }
 
 type handoffFormReq struct {
@@ -197,12 +196,12 @@ func handleChatInit(r *fastglue.Request) error {
 		visitor           umodels.User
 	)
 
-	if err := r.Decode(&req, "json"); err != nil {
-		app.lo.Debug("error unmarshalling chat init request", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.T("errors.parsingRequest"), nil, envelope.InputError)
+	var err error
+	if req, err = decodeChatInitRequest(r); err != nil {
+		return sendErrorEnvelope(r, err)
 	}
 
-	if req.Message == "" {
+	if strings.TrimSpace(req.Message) == "" && len(req.Attachments) == 0 {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.Ts("globals.messages.required", "name", "{globals.terms.message}"), nil, envelope.InputError)
 	}
 	if len(req.Message) > maxChatMessageLength {
@@ -285,8 +284,9 @@ func handleChatInit(r *fastglue.Request) error {
 		Content:          req.Message,
 		ContentType:      cmodels.ContentTypeText,
 		Private:          false,
+		Attachments:      req.Attachments,
 	}
-	if err := app.conversation.InsertMessage(&message); err != nil {
+	if message, err = app.conversation.InsertLiveChatMessage(message); err != nil {
 		// Clean up conversation if message insert fails.
 		if err := app.conversation.DeleteConversation(conversationUUID); err != nil {
 			app.lo.Error("error deleting conversation after message insert failure", "conversation_uuid", conversationUUID, "error", err)
@@ -690,54 +690,9 @@ func handleWidgetMediaUpload(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.somethingWentWrong"), nil, envelope.GeneralError)
 	}
 
-	if !config.Features.FileUpload {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.T("status.disabledFileUpload"), nil, envelope.InputError)
-	}
-
-	files, ok := form.File["files"]
-	if !ok || len(files) == 0 {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.T("validation.notFoundFile"), nil, envelope.InputError)
-	}
-
-	fileHeader := files[0]
-	file, err := fileHeader.Open()
+	attachments, err := readWidgetUpload(app, form.File["files"], config)
 	if err != nil {
-		app.lo.Error("error reading uploaded file", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.somethingWentWrong"), nil, envelope.GeneralError)
-	}
-	defer file.Close()
-
-	// Sanitize filename.
-	srcFileName := stringutil.SanitizeFilename(fileHeader.Filename)
-	srcContentType := fileHeader.Header.Get("Content-Type")
-	srcFileSize := fileHeader.Size
-	srcExt := strings.TrimPrefix(strings.ToLower(filepath.Ext(srcFileName)), ".")
-
-	if srcFileSize <= 0 {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.T("media.fileEmpty"), nil, envelope.InputError)
-	}
-
-	// Check file size
-	consts := app.consts.Load().(*constants)
-	if bytesToMegabytes(srcFileSize) > float64(consts.MaxFileUploadSizeMB) {
-		app.lo.Debug("widget upload rejected: file exceeds size limit", "size_mb", bytesToMegabytes(srcFileSize), "max_allowed_mb", consts.MaxFileUploadSizeMB)
-		return r.SendErrorEnvelope(
-			fasthttp.StatusRequestEntityTooLarge,
-			app.i18n.Ts("media.fileSizeTooLarge", "size", fmt.Sprintf("%dMB", consts.MaxFileUploadSizeMB)),
-			nil,
-			envelope.GeneralError,
-		)
-	}
-
-	// Make sure the file extension is allowed.
-	if !slices.Contains(consts.AllowedUploadFileExtensions, "*") && !slices.Contains(consts.AllowedUploadFileExtensions, srcExt) {
-		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.T("media.fileTypeNotAllowed"), nil, envelope.InputError)
-	}
-
-	fileContent, err := io.ReadAll(file)
-	if err != nil {
-		app.lo.Error("error reading file content", "error", err)
-		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.somethingWentWrong"), nil, envelope.GeneralError)
+		return sendErrorEnvelope(r, err)
 	}
 
 	message := cmodels.Message{
@@ -750,15 +705,7 @@ func handleWidgetMediaUpload(r *fastglue.Request) error {
 		Content:          "",
 		ContentType:      cmodels.ContentTypeText,
 		Private:          false,
-		Attachments: attachment.Attachments{
-			{
-				Name:        srcFileName,
-				ContentType: srcContentType,
-				Size:        int(srcFileSize),
-				Content:     fileContent,
-				Disposition: attachment.DispositionAttachment,
-			},
-		},
+		Attachments:      attachments,
 	}
 
 	// Process the incoming message with attachment.
