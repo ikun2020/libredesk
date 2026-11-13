@@ -211,6 +211,10 @@ describe('Reply composer on touch screens', () => {
     })
     cy.wait('@loadInbox')
     cy.get('.app-shell h1').should('be.visible')
+    // The loading indicator has a minimum display time, so the response can
+    // finish before the rows render. Wait for a real row before scrolling;
+    // replacing the skeletons would otherwise move the browser's scroll anchor.
+    cy.get(`.app-shell a[href$="/conversation/${conversationUuid}"]`).should('be.visible')
     cy.get('.app-shell .overscroll-contain:visible').first().then(($pane) => {
       pane = $pane[0]
       // Make the inner pane scrollable independently of the test database size.
@@ -218,6 +222,7 @@ describe('Reply composer on touch screens', () => {
       content.style.height = '1600px'
       pane.append(content)
       pane.scrollTop = 160
+      expect(pane.scrollTop, 'list is scrolled before backgrounding').to.eq(160)
     })
     cy.window().then((win) => {
       state.hidden = true
