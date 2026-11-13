@@ -44,8 +44,9 @@ export function useVisualViewportHeight () {
     keyboardTop = viewport?.scale === 1 && window.matchMedia('(pointer: coarse)').matches &&
       height < document.documentElement.clientHeight && followsKeyboard &&
       Number.isFinite(viewport.pageTop) ? Math.max(0, viewport.pageTop) : 0
-    // The shell stays in document flow. pageTop is already a document coordinate;
-    // adding scrollY or offsetTop would count WebKit's keyboard pan twice.
+    // The wrapper reserves this space in normal flow, including in its parent's
+    // height. pageTop is already a document coordinate; do not add scrollY or
+    // offsetTop and count WebKit's keyboard pan twice.
     rootStyle.setProperty(topProperty, `${keyboardTop}px`)
   }
 

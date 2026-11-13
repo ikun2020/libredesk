@@ -16,6 +16,7 @@
     <div class="mt-3 flex flex-wrap gap-2">
       <Button type="button" size="sm" @click="copyReport">{{ t('diagnostics.copy') }}</Button>
       <Button type="button" size="sm" variant="outline" @click="downloadReport">{{ t('diagnostics.download') }}</Button>
+      <Button type="button" size="sm" variant="outline" @click="recalculateViewport">{{ t('diagnostics.recalculate') }}</Button>
     </div>
     <p v-if="status" class="mt-2 text-xs" role="status">{{ t(status) }}</p>
   </aside>
@@ -58,6 +59,12 @@ watch(active, enabled => {
 const report = () => {
   recorder.capture('export')
   return recorder.exportReport()
+}
+
+const recalculateViewport = () => {
+  status.value = recorder.recalculateViewport()
+    ? 'diagnostics.recalculationRequested'
+    : 'diagnostics.recalculationUnavailable'
 }
 
 const copyReport = async () => {

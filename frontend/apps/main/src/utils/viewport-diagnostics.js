@@ -10,9 +10,11 @@ const STYLE_FIELDS = [
 
 const number = value => Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null
 const numbers = (source, fields) => Object.fromEntries(fields.map(key => [key, number(source?.[key])]))
+const isEditable = element => Boolean(element?.matches('input, textarea, select, [role="textbox"]') ||
+  element?.isContentEditable || element?.closest('[contenteditable="true"], [contenteditable=""]'))
 
 // Opt-in and memory-only. Capture geometry, never page text, URLs, account data,
-// storage or arbitrary attributes. This observes layout without correcting it.
+// storage or arbitrary attributes. Recording itself never changes the viewport.
 export function createViewportRecorder ({ win = window, version = '' } = {}) {
   const doc = win.document
   let active = false
@@ -26,6 +28,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
   let lastSample = -Infinity
   let lastVisible = null
   let hasBackgrounded = false
+  let recalculation = null
 
   const snapshot = reason => {
     const element = node => {
@@ -57,6 +60,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
         html: element(doc.documentElement),
         body: element(doc.body),
         app: element(doc.getElementById('app')),
+        viewport: element(doc.querySelector('.app-viewport')),
         shell: element(doc.querySelector('.app-shell'))
       },
       safeArea: safeStyle ? {
@@ -65,22 +69,21 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
       } : null,
       viewportHeight: win.getComputedStyle(doc.documentElement).getPropertyValue('--visual-viewport-height').trim(),
       viewportPageTop: win.getComputedStyle(doc.documentElement).getPropertyValue('--visual-viewport-page-top').trim(),
-      editableFocused: Boolean(focused?.matches('input, textarea, select, [role="textbox"]') ||
-        focused?.isContentEditable || focused?.closest('[contenteditable="true"], [contenteditable=""]'))
+      editableFocused: isEditable(focused)
     }
   }
 
   const capture = (reason = 'manual') => {
     if (!active) return
     // Callers supply fixed action names; do not accept arbitrary text as metadata.
-    const label = /^(manual|copy|download|export|start|stop|freeze|baseline|hidden|visible|pageshow|orientationchange|resize|focus|viewport-resize|viewport-scroll)(:(frame|250ms|1000ms|2000ms))?$/.test(reason)
+    const label = /^(?:(manual|copy|download|export|start|stop|freeze|baseline|hidden|visible|pageshow|orientationchange|resize|focus|viewport-resize|viewport-scroll)(:(frame|250ms|1000ms|2000ms))?|viewport-recalculate:(before|requested|restored|after))$/.test(reason)
       ? reason : 'manual'
     const sample = snapshot(label)
     if (!sample.hidden) {
       lastVisible = sample
       // Keep the initial settled geometry even when later events fill history.
       // A first return from the background must not become the normal baseline.
-      if (!report.settledBaseline && !hasBackgrounded && sample.elapsedMs >= 1000) {
+      if (!report.settledBaseline && !hasBackgrounded && !report.viewportRecalculation && sample.elapsedMs >= 1000) {
         report.settledBaseline = sample
       }
     }
@@ -129,7 +132,80 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     listeners.push(() => target.removeEventListener(event, handler, true))
   }
 
+  const cancelRecalculation = () => {
+    recalculation?.cancel()
+    recalculation = null
+  }
+
+  // A separately invoked, bounded experiment, never a lifecycle recovery.
+  // Request the previously observed minimum viewport height, then restore the
+  // exact metadata. The browser may ignore this; only the report can show its effect.
+  const recalculateViewport = () => {
+    if (!active || recalculation || doc.hidden || isEditable(doc.activeElement)) return false
+    const viewport = win.visualViewport
+    const baseline = report.settledBaseline || report.baseline
+    const meta = doc.querySelector('meta[name="viewport"]')
+    const original = meta?.getAttribute('content')
+    const targetHeight = Math.round(baseline?.visualViewport?.height)
+    if (!(win.navigator.standalone === true || win.matchMedia('(display-mode: standalone)').matches) ||
+      !win.matchMedia('(pointer: coarse)').matches || !viewport || viewport.scale !== 1 ||
+      viewport.offsetTop !== 0 || viewport.offsetLeft !== 0 || win.scrollY !== 0 || win.scrollX !== 0 ||
+      baseline.hidden || baseline.editableFocused || baseline.visualViewport?.scale !== 1 ||
+      !Number.isFinite(targetHeight) || targetHeight < 1 || targetHeight > 10000 ||
+      !Number.isFinite(viewport.height) || viewport.height <= 0 || targetHeight <= viewport.height ||
+      !Number.isFinite(viewport.width) || viewport.width <= 0 ||
+      Math.abs(baseline.visualViewport.width - viewport.width) >= 1 ||
+      Math.abs(win.innerWidth - viewport.width) >= 1 ||
+      baseline.orientation.type !== (win.screen.orientation?.type ?? null) ||
+      !original || /(?:^|[,;\s])height\s*=/i.test(original)) return false
+
+    const result = {
+      manual: true, requestedHeight: targetHeight, metaRestored: false, interrupted: false,
+      before: null, after: null
+    }
+    report.viewportRecalculation = result
+    result.before = capture('viewport-recalculate:before')
+    let restoreFrame = null
+    let restoreTimer = null
+    let afterTimer = null
+    const restoreMeta = () => {
+      if (restoreFrame !== null) win.cancelAnimationFrame(restoreFrame)
+      if (restoreTimer !== null) win.clearTimeout(restoreTimer)
+      restoreFrame = restoreTimer = null
+      if (!result.metaRestored) {
+        meta.setAttribute('content', original)
+        result.metaRestored = true
+        capture('viewport-recalculate:restored')
+      }
+    }
+    const current = {
+      cancel: () => {
+        restoreMeta()
+        if (afterTimer !== null) win.clearTimeout(afterTimer)
+        result.interrupted = true
+      }
+    }
+    const restoreAndObserve = () => {
+      if (recalculation !== current) return
+      restoreMeta()
+      afterTimer = win.setTimeout(() => {
+        if (recalculation !== current) return
+        result.after = capture('viewport-recalculate:after')
+        recalculation = null
+      }, 1000)
+    }
+    recalculation = current
+    meta.setAttribute('content', `${original}, height=${targetHeight}`)
+    capture('viewport-recalculate:requested')
+    restoreFrame = win.requestAnimationFrame(() => {
+      restoreFrame = win.requestAnimationFrame(restoreAndObserve)
+    })
+    restoreTimer = win.setTimeout(restoreAndObserve, 250)
+    return true
+  }
+
   const stop = () => {
+    cancelRecalculation()
     active = false
     cancelPending()
     listeners.forEach(remove => remove())
@@ -151,11 +227,13 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     active = true
     report = {
       schema: 1, version: String(version), userAgent: win.navigator.userAgent,
-      baseline: snapshot('baseline'), settledBaseline: null, beforeBackground: null, samples: []
+      baseline: snapshot('baseline'), settledBaseline: null, beforeBackground: null,
+      viewportRecalculation: null, samples: []
     }
     if (!report.baseline.hidden) lastVisible = report.baseline
     listen(doc, 'visibilitychange', () => {
       if (doc.hidden) {
+        cancelRecalculation()
         // Hidden documents may already report zero or stale dimensions.
         report.beforeBackground = lastVisible
         hasBackgrounded = true
@@ -163,10 +241,17 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
       settle(doc.hidden ? 'hidden' : 'visible')
     })
     listen(win, 'pageshow', () => settle('pageshow'))
-    listen(win, 'orientationchange', () => settle('orientationchange'))
+    listen(win, 'orientationchange', () => {
+      cancelRecalculation()
+      settle('orientationchange')
+    })
+    listen(doc, 'focusin', event => { if (isEditable(event.target)) cancelRecalculation() })
     listen(win, 'focus', event => { if (event.target === win) settle('focus') })
     listen(win, 'resize', () => throttled('resize'))
-    listen(win.visualViewport, 'resize', () => throttled('viewport-resize'))
+    listen(win.visualViewport, 'resize', () => {
+      if (win.visualViewport.scale !== 1) cancelRecalculation()
+      throttled('viewport-resize')
+    })
     listen(win.visualViewport, 'scroll', () => throttled('viewport-scroll'))
     // A menu may still be closing when recording starts. Keep that first sample
     // and re-read after its animation without modifying focus or layout.
@@ -177,6 +262,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
     start,
     stop,
     capture,
+    recalculateViewport,
     exportReport: () => JSON.stringify(report, null, 2)
   }
 }

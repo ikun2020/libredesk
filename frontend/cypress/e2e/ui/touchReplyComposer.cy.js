@@ -201,6 +201,85 @@ describe('Reply composer on touch screens', () => {
     sendReply(`${draft} continued in fullscreen`)
   })
 
+  it('keeps the inline editor and send button clickable while the keyboard pans the document', () => {
+    cy.viewport(867, 669)
+    let state
+    let editableNode
+    openConversation('coarse', {
+      beforeLoad(win) {
+        state = standaloneViewport(win)
+        // Model the mobile layout viewport while the actual browser viewport
+        // below shrinks. Do not enlarge body or #app: their real clipping bounds
+        // must come from the application's layout, not a test-only min-height.
+        Object.defineProperty(win.document.documentElement, 'clientHeight', {
+          configurable: true,
+          get: () => 669
+        })
+      }
+    })
+    const draft = 'Keyboard clipping regression draft'
+    editor().click('center', { scrollBehavior: false })
+    editor().should('be.focused').type(draft, { scrollBehavior: false })
+    editor().then(($editor) => { editableNode = $editor[0] })
+
+    const expectHitTarget = ($target) => {
+      const node = $target[0]
+      const rect = node.getBoundingClientRect()
+      const hit = node.ownerDocument.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2
+      )
+      expect(node.contains(hit), 'center remains clickable through ancestor clipping').to.eq(true)
+    }
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      // Leave the mocked visual viewport at 669 during the native resize so
+      // there is initially enough document height for the real keyboard pan.
+      cy.viewport(867, 337)
+      cy.window().then((win) => {
+        expect(win.innerHeight).to.eq(337)
+        win.scrollTo(0, 332)
+        expect(win.scrollY, 'reproduce the actual document displacement').to.eq(332)
+        Object.assign(state.viewport, { height: 337, pageTop: 332, offsetTop: 332 })
+        state.viewport.dispatchEvent(new win.Event('resize'))
+        state.viewport.dispatchEvent(new win.Event('scroll'))
+      })
+      cy.get('.app-shell').should(($shell) => {
+        const shell = $shell[0]
+        const rect = shell.getBoundingClientRect()
+        expect(rect.top, 'shell follows the keyboard pan').to.eq(0)
+        expect(rect.height, 'shell fills the visible region').to.eq(337)
+        expect(shell.ownerDocument.body.getBoundingClientRect().height,
+          'body includes the pan space instead of clipping the shell').to.eq(669)
+      })
+      cy.then(() => expectSameFocusedEditor(editableNode, draft))
+      expectInlineLayout(337)
+      // A correct bounding box can still be hidden by overflow on an ancestor.
+      // Hit-test both controls and use real actions without forced clicks or
+      // automatic scrolling that could conceal that regression.
+      editor().should(expectHitTarget).click('center', { scrollBehavior: false })
+      editor().should('be.focused').type('{end} continued', { scrollBehavior: false })
+      sendButton().should('be.enabled').should(expectHitTarget)
+      if (cycle === 1) sendReply(draft)
+
+      cy.viewport(867, 669)
+      cy.window().then((win) => {
+        Object.assign(state.viewport, { height: 669, pageTop: 0, offsetTop: 0 })
+        win.scrollTo(0, 0)
+        state.viewport.dispatchEvent(new win.Event('resize'))
+        state.viewport.dispatchEvent(new win.Event('scroll'))
+      })
+      cy.get('.app-shell').should(($shell) => {
+        const rect = $shell[0].getBoundingClientRect()
+        expect(rect.top).to.eq(0)
+        expect(rect.height).to.eq(669)
+      })
+    }
+    // The override belongs to this document only; remove it for interactive
+    // debugging as well. Subsequent tests also navigate to a fresh document.
+    cy.window().then((win) => { delete win.document.documentElement.clientHeight })
+  })
+
   it('realigns the unfolded standalone inbox after resume without resetting the list scroll', () => {
     let state
     let pane

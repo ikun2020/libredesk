@@ -59,6 +59,7 @@ beforeEach(() => {
   createRecorder.mockReset().mockImplementation(() => {
     const recorder = {
       start: vi.fn(), stop: vi.fn(), capture: vi.fn(),
+      recalculateViewport: vi.fn(() => true),
       exportReport: vi.fn(() => reportText)
     }
     recorders.push(recorder)
@@ -94,6 +95,21 @@ describe('viewport diagnostic controls', () => {
     expect(recorder.start).toHaveBeenCalledOnce()
     expect(button('diagnostics.copy')).toBeTruthy()
     expect(button('diagnostics.download')).toBeTruthy()
+    expect(writeText).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('requests recalculation only on a separate click and reports acceptance=%s', async accepted => {
+    await mount()
+    const recorder = await start()
+    recorder.recalculateViewport.mockReturnValue(accepted)
+    expect(recorder.recalculateViewport).not.toHaveBeenCalled()
+    button('diagnostics.recalculate').click()
+    await settle()
+    expect(recorder.recalculateViewport).toHaveBeenCalledOnce()
+    expect(host.querySelector('[role="status"]').textContent).toBe(accepted
+      ? 'diagnostics.recalculationRequested' : 'diagnostics.recalculationUnavailable')
+    expect(recorder.stop).not.toHaveBeenCalled()
     expect(writeText).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
   })

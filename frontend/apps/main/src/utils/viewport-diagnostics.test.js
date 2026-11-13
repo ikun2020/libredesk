@@ -202,7 +202,7 @@ describe('opt-in viewport diagnostic recorder', () => {
     const saved = recorder.exportReport()
     expect(document.body.childElementCount).toBe(1)
     expect(vi.getTimerCount()).toBe(0)
-    expect(removals.map(spy => spy.mock.calls.length)).toEqual([4, 1, 2])
+    expect(removals.map(spy => spy.mock.calls.length)).toEqual([4, 2, 2])
     window.dispatchEvent(new Event('focus'))
     window.dispatchEvent(new Event('pageshow'))
     viewport.dispatchEvent(new Event('resize'))
@@ -233,4 +233,114 @@ describe('opt-in viewport diagnostic recorder', () => {
     expect(read().baseline.elements.shell).toBeNull()
     expect(read().baseline.window.innerHeight).toBe(window.innerHeight)
   })
+})
+
+describe('manual viewport recalculation experiment', () => {
+  const originalContent = 'width=device-width, initial-scale=1, interactive-widget=resizes-visual'
+  let meta
+
+  const prepare = () => {
+    vi.stubGlobal('innerWidth', 900)
+    meta = document.createElement('meta')
+    meta.setAttribute('name', 'viewport')
+    meta.setAttribute('content', originalContent)
+    meta.setAttribute('data-original', 'preserved')
+    document.head.append(meta)
+    recorder.start()
+    vi.advanceTimersByTime(1000)
+    viewport.height = 620
+  }
+
+  afterEach(() => {
+    recorder.stop()
+    meta?.remove()
+    meta = null
+  })
+
+  it('only changes metadata on an explicit request, restores it exactly, and retains before/after geometry', () => {
+    prepare()
+    const attributes = meta.outerHTML
+    window.dispatchEvent(new Event('pageshow'))
+    expect(meta.outerHTML).toBe(attributes)
+    expect(read().viewportRecalculation).toBeNull()
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    const input = document.querySelector('input')
+
+    expect(recorder.recalculateViewport()).toBe(true)
+    expect(meta.content).toBe(`${originalContent}, height=700`)
+    expect(meta.content).not.toMatch(/user-scalable|maximum-scale|minimum-scale/)
+    expect(recorder.recalculateViewport()).toBe(false)
+    expect(read().viewportRecalculation).toMatchObject({
+      manual: true, requestedHeight: 700, metaRestored: false,
+      before: { visualViewport: { height: 620 } }, after: null
+    })
+    vi.advanceTimersByTime(50)
+    expect(meta.outerHTML).toBe(attributes)
+    expect(read().viewportRecalculation.metaRestored).toBe(true)
+    viewport.height = 700
+    vi.advanceTimersByTime(1100)
+    expect(read().viewportRecalculation).toMatchObject({
+      interrupted: false, after: { reason: 'viewport-recalculate:after', visualViewport: { height: 700 } }
+    })
+    expect(read().settledBaseline.visualViewport.height).toBe(700)
+    expect(input.value).toBe('PRIVATE-DRAFT')
+    expect(document.activeElement).toBe(document.body)
+    expect(scroll).not.toHaveBeenCalled()
+    expect(recorder.exportReport()).not.toContain(originalContent)
+  })
+
+  it('restores the original metadata within 250ms when animation frames do not run', () => {
+    prepare()
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(999)
+    expect(recorder.recalculateViewport()).toBe(true)
+    vi.advanceTimersByTime(250)
+    expect(meta.content).toBe(originalContent)
+    expect(read().viewportRecalculation.metaRestored).toBe(true)
+    vi.advanceTimersByTime(1000)
+    expect(read().viewportRecalculation.after.visualViewport.height).toBe(620)
+  })
+
+  it.each(['stop', 'hidden', 'orientation', 'editing', 'zoom'])(
+    'restores immediately and cancels observation when interrupted by %s', mode => {
+      prepare()
+      expect(recorder.recalculateViewport()).toBe(true)
+      if (mode === 'stop') recorder.stop()
+      if (mode === 'hidden') {
+        hidden.mockReturnValue(true)
+        document.dispatchEvent(new Event('visibilitychange'))
+      }
+      if (mode === 'orientation') window.dispatchEvent(new Event('orientationchange'))
+      if (mode === 'editing') document.querySelector('input').focus()
+      if (mode === 'zoom') {
+        viewport.scale = 2
+        viewport.dispatchEvent(new Event('resize'))
+      }
+      expect(meta.content).toBe(originalContent)
+      expect(read().viewportRecalculation).toMatchObject({ metaRestored: true, interrupted: true, after: null })
+      vi.advanceTimersByTime(2000)
+      expect(meta.content).toBe(originalContent)
+      expect(read().viewportRecalculation.after).toBeNull()
+    }
+  )
+
+  it.each(['zoom', 'folded width', 'keyboard focus', 'hidden', 'existing height', 'browser tab', 'short baseline'])(
+    'rejects an unsafe or inconclusive experiment with %s', mode => {
+      prepare()
+      if (mode === 'zoom') viewport.scale = 0.912
+      if (mode === 'folded width') viewport.width = 466
+      if (mode === 'keyboard focus') document.querySelector('input').focus()
+      if (mode === 'hidden') hidden.mockReturnValue(true)
+      if (mode === 'existing height') meta.content = `${originalContent}, height=600`
+      if (mode === 'browser tab') window.matchMedia.mockImplementation(query => ({ matches: query.includes('coarse') }))
+      if (mode === 'short baseline') {
+        // A baseline accidentally recorded with the keyboard up is not a
+        // trustworthy request to enlarge the current viewport.
+        viewport.height = 900
+      }
+      const unchanged = meta.outerHTML
+      expect(recorder.recalculateViewport()).toBe(false)
+      expect(meta.outerHTML).toBe(unchanged)
+      expect(read().viewportRecalculation).toBeNull()
+    }
+  )
 })

@@ -1,68 +1,70 @@
 <template>
-  <div class="app-shell flex h-dvh w-full gap-1 bg-canvas p-1 text-foreground">
-    <SidebarProvider v-if="!isMobile" style="--sidebar-width: 3rem" class="w-auto z-50">
-      <ShadcnSidebar collapsible="none" class="overflow-hidden rounded-xl">
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <PrimaryNavItems variant="rail" />
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <NotificationBell />
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  <p>{{ t('globals.terms.notification', 2) }}</p>
-                </TooltipContent>
-              </Tooltip>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarNavUser />
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      </ShadcnSidebar>
-    </SidebarProvider>
+  <div class="app-viewport">
+    <div class="app-shell flex h-dvh w-full gap-1 bg-canvas p-1 text-foreground">
+      <SidebarProvider v-if="!isMobile" style="--sidebar-width: 3rem" class="w-auto z-50">
+        <ShadcnSidebar collapsible="none" class="overflow-hidden rounded-xl">
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <PrimaryNavItems variant="rail" />
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+          <SidebarFooter>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <NotificationBell />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    <p>{{ t('globals.terms.notification', 2) }}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarNavUser />
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarFooter>
+        </ShadcnSidebar>
+      </SidebarProvider>
 
-    <!-- Main sidebar that collapses -->
-    <div class="flex-1 min-w-0">
-      <Sidebar
-        :userTeams="userStore.teams"
-        :userViews="viewStore.views"
-        :sharedViews="sharedViewStore.sharedViewList"
-        @create-view="createView"
-        @edit-view="editView"
-        @delete-view="deleteView"
-        @create-conversation="openCreateConversation()"
-      >
-        <div
-          class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl"
-          :class="
-            route.path.startsWith('/inboxes') && route.name !== 'search'
-              ? 'bg-canvas'
-              : 'border border-border bg-card'
-          "
+      <!-- Main sidebar that collapses -->
+      <div class="flex-1 min-w-0">
+        <Sidebar
+          :userTeams="userStore.teams"
+          :userViews="viewStore.views"
+          :sharedViews="sharedViewStore.sharedViewList"
+          @create-view="createView"
+          @edit-view="editView"
+          @delete-view="deleteView"
+          @create-conversation="openCreateConversation()"
         >
-          <ConnectionBanner />
+          <div
+            class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl"
+            :class="
+              route.path.startsWith('/inboxes') && route.name !== 'search'
+                ? 'bg-canvas'
+                : 'border border-border bg-card'
+            "
+          >
+            <ConnectionBanner />
 
-          <!-- Show admin banner only in admin routes -->
-          <AdminBanner v-if="route.path.startsWith('/admin')" />
+            <!-- Show admin banner only in admin routes -->
+            <AdminBanner v-if="route.path.startsWith('/admin')" />
 
-          <!-- Common header for all pages -->
-          <PageHeader />
+            <!-- Common header for all pages -->
+            <PageHeader />
 
-          <!-- Main content -->
-          <RouterView class="min-h-0 flex-1" />
-        </div>
-        <ViewForm v-model:openDialog="openCreateViewForm" v-model:view="view" />
-      </Sidebar>
+            <!-- Main content -->
+            <RouterView class="min-h-0 flex-1" />
+          </div>
+          <ViewForm v-model:openDialog="openCreateViewForm" v-model:view="view" />
+        </Sidebar>
+      </div>
     </div>
   </div>
 
@@ -312,9 +314,13 @@ const refreshViews = async (data) => {
 
 <style scoped>
 @media (pointer: coarse) {
+  .app-viewport {
+    /* Include keyboard panning in normal flow so body overflow cannot clip
+       the shifted shell. Relative positioning alone leaves its parent short. */
+    padding-top: var(--visual-viewport-page-top, 0px);
+  }
+
   .app-shell {
-    position: relative;
-    top: var(--visual-viewport-page-top, 0px);
     height: var(--visual-viewport-height, 100dvh);
   }
 }
