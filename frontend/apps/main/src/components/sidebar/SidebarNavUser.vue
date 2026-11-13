@@ -107,6 +107,10 @@
           <Keyboard size="18" class="mr-2" />
           {{ t('navigation.keyboardShortcuts') }}
         </DropdownMenuItem>
+        <DropdownMenuItem @select="toggleDiagnostics">
+          <Bug size="18" class="mr-2" />
+          {{ t(diagnostics.active.value ? 'diagnostics.stop' : 'diagnostics.start') }}
+        </DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuItem @click="logout">
@@ -128,7 +132,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@shared-ui/components/ui/dropdown-menu'
-import { SidebarMenuButton } from '@shared-ui/components/ui/sidebar'
+import { SidebarMenuButton, useSidebar } from '@shared-ui/components/ui/sidebar'
 import { Avatar, AvatarFallback, AvatarImage } from '@shared-ui/components/ui/avatar'
 import StatusDot from '@shared-ui/components/StatusDot.vue'
 import { Switch } from '@shared-ui/components/ui/switch'
@@ -136,6 +140,7 @@ import { Tabs, TabsList, TabsTrigger } from '@shared-ui/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
 import {
   ChevronsUpDown,
+  Bug,
   CircleUserRound,
   Keyboard,
   LogOut,
@@ -148,6 +153,7 @@ import { useIsMobile } from '@shared-ui/composables'
 import { useRouter } from 'vue-router'
 import { useKeyboardShortcutsDialog } from '@main/composables/useKeyboardShortcutsDialog'
 import { useLogout } from '@main/composables/useLogout'
+import { useViewportDiagnostics } from '@main/composables/useViewportDiagnostics'
 
 import { useColorMode } from '@vueuse/core'
 
@@ -165,4 +171,11 @@ const router = useRouter()
 const { t } = useI18n()
 const shortcutsDialog = useKeyboardShortcutsDialog()
 const logout = useLogout()
+const diagnostics = useViewportDiagnostics()
+const { setOpenMobile } = useSidebar()
+const toggleDiagnostics = () => {
+  if (diagnostics.active.value) diagnostics.stop()
+  else diagnostics.start()
+  setOpenMobile(false)
+}
 </script>

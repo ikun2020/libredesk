@@ -79,6 +79,7 @@
   />
 
   <KeyboardShortcutsDialog v-model:open="showShortcuts" />
+  <ViewportDiagnostics />
 </template>
 
 <script setup>
@@ -105,6 +106,7 @@ import { useAiPromptStore } from '@main/stores/aiPrompt'
 import { useViewStore } from './stores/view'
 import { useKeyboardShortcutsDialog } from './composables/useKeyboardShortcutsDialog'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog.vue'
+import ViewportDiagnostics from './components/ViewportDiagnostics.vue'
 import { initAudioContext } from '@shared-ui/composables/useNotificationSound'
 import PageHeader from './components/layout/PageHeader.vue'
 import ViewForm from '@/features/view/ViewForm.vue'
