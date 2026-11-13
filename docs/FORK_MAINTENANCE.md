@@ -10,10 +10,12 @@
 | 原项目 | [abhinavxd/libredesk](https://github.com/abhinavxd/libredesk)，默认分支 `main` |
 | 首次定制前的上游基线 | `88ec89ab21a912ca402fbfd2fd4f984d95d88175` |
 | 当前两项定制的功能基线 | `a08ec969301b2b2dfbbc971ef88847283a168471` |
+| 最近合入的上游 main | `0c6fae8688338390f04d272e019d43ee7cbed0a7`（2026-11-13） |
+| 本次同步前 fork 主分支 | `2fc1999ccc63ac49619f8b7341b9d5ea6c8997df` |
 | 此基线已发布镜像 | `ghcr.io/ikun2020/libredesk:sha-a08ec96`，应用版本 `v2.9.2+git.a08ec969` |
 | 发布验证 | [Docker image 构建](https://github.com/ikun2020/libredesk/actions/runs/43418248215) |
 
-以上是建档时的历史基线，不代表将来 `latest` 的版本。本次建档不执行上游同步，也不修改应用功能。
+功能及镜像基线是建档时的历史记录，不代表将来 `latest` 的版本。建档时未执行上游同步；后续同步记录见上表和末尾日志。
 
 ## 1. 会话更新按内容自动回复
 
@@ -112,7 +114,7 @@ git rev-parse HEAD upstream/main
 git merge --no-ff upstream/main
 ```
 
-记录建立时只有 `origin`，尚未添加或拉取 `upstream`。若需退出尚未完成的合并，可使用 `git merge --abort`；不要丢弃用户工作。上述命令仅准备合并，不会自动发布。[Git 合并冲突处理文档](https://git-scm.com/docs/git-merge)
+记录建立时只有 `origin`；2026-11-13 首次同步时已添加 `upstream`，指向上表中的原项目。若需退出尚未完成的合并，可使用 `git merge --abort`；不要丢弃用户工作。上述命令仅准备合并，不会自动发布。[Git 合并冲突处理文档](https://git-scm.com/docs/git-merge)
 
 ## 同步后的回归清单
 
@@ -148,3 +150,4 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 | 日期 | 结果 |
 | --- | --- |
 | 2026-11-13 | 建立两项定制维护记录；功能基线 `a08ec969`，本次未执行上游同步。 |
+| 2026-11-13 | 从 fork `2fc1999c` 合并上游 `0c6fae86`（PR #823，锁定的 `vue-letter` 从 0.2.2 升级到 0.2.3）。无文本冲突；两项定制代码、回归测试和 GHCR 工作流均保持原样。同步分支 `codex/sync-upstream-20261113`；同步前本地备份 `codex/backup-before-sync-20261113`。 |
