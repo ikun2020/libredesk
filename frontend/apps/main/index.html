@@ -4,7 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="robots" content="noindex, nofollow" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
+  <!-- The touch composer follows visualViewport.height; keep the layout viewport
+       stable instead of opting into WebKit's new resizes-content behavior. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-visual" />
   <meta name="theme-color" content="hsl(152 39% 30%)" />
   <script>
     (() => {
