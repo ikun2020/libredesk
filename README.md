@@ -121,6 +121,27 @@ __________________
 See [installation docs](https://docs.libredesk.io/getting-started/installation)
 __________________
 
+## Keyword auto-replies
+
+Fixed replies do not require an AI provider. In **Admin → Automations**, create
+and enable a **Conversation update** rule with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Events | Incoming message |
+| Match all conditions | Inbox equals your website's live chat inbox; Content contains `优惠券` |
+| Action | Send reply: `123456` |
+
+The Content condition on message events matches the text of the message that
+triggered the event, including when it reopens a resolved or snoozed conversation.
+Each matching customer message can trigger a reply. Select only **Incoming message**
+for this rule so agent replies and status changes do not trigger it.
+
+The first message of a new conversation uses **New conversation** rules instead.
+To reply to both first and later messages, add a second rule of that type with
+the same conditions and reply. Test with a new chat, a later matching message,
+and a message that does not contain the keyword.
+
 ## Developers
 
 - If you are interested in contributing, **please read [CONTRIBUTING.md](./CONTRIBUTING.md) first**.

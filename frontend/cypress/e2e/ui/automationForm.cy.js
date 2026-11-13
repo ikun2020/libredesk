@@ -386,3 +386,119 @@ describe('Automation form To email address field', () => {
     })
   })
 })
+
+describe('Automation form incoming keyword replies', () => {
+  const created = []
+  const keywordRuleName = `Cypress keyword reply ${stamp}`
+  const incomingEvent = 'conversation.message.incoming'
+
+  beforeEach(() => {
+    cy.viewport(1280, 900)
+    cy.login()
+  })
+
+  after(() => {
+    cy.login()
+    created.forEach((id) => {
+      cy.api('DELETE', `/api/v1/automations/rules/${id}`, null, { failOnStatusCode: false })
+    })
+  })
+
+  it('offers content matching on conversation updates but not time triggers', () => {
+    cy.visit(newPath)
+    pickType('Conversation update')
+    cy.contains('button', 'Add condition').first().click()
+    pickOption('Select field', /^Content$/)
+    pickOption('Select operator', /^contains any of$/)
+    conditionRows().eq(0).find('input').filter(':visible').should('be.visible')
+    caseSensitiveBox().should('exist')
+
+    pickType('Time triggers')
+    cy.contains('button', 'Add condition').first().click()
+    openFieldList()
+    cy.contains('[role="option"]', /^Status$/).should('exist')
+    cy.contains('[role="option"]', /^Content$/).should('not.exist')
+    closeList()
+  })
+
+  it('loads and saves an incoming keyword rule without losing its fixed reply or event', () => {
+    const keyword = '优惠券'
+    const editedKeyword = '领取优惠券'
+    const assertKeywordForm = (expectedKeyword) => {
+      cy.get('select[name="type"]').should('have.value', 'conversation_update')
+      cy.contains('Incoming message').should('be.visible')
+      conditionRows().should('have.length', 1)
+      conditionRows().eq(0).find('button[role="combobox"]').eq(0).should('contain.text', 'Content')
+      conditionRows().eq(0).find('button[role="combobox"]').eq(1).should('contain.text', 'contains any of')
+      conditionRows().eq(0).contains('span', expectedKeyword).should('be.visible')
+      actionRows().should('have.length', 1)
+      actionRows().eq(0).find('button[role="combobox"]').should('contain.text', 'Send reply')
+      cy.get('.tiptap.ProseMirror').should('contain.text', '123456')
+    }
+
+    cy.api('POST', '/api/v1/automations/rules', {
+      name: keywordRuleName,
+      description: 'created by the incoming keyword form spec',
+      type: 'conversation_update',
+      enabled: false,
+      events: [incomingEvent],
+      rules: [
+        {
+          group_operator: 'OR',
+          groups: [
+            {
+              logical_op: 'OR',
+              rules: [
+                {
+                  field: 'content',
+                  field_type: 'conversation',
+                  operator: 'contains',
+                  value: keyword,
+                  case_sensitive_match: false
+                }
+              ]
+            },
+            { logical_op: 'OR', rules: [] }
+          ],
+          actions: [{ type: 'send_reply', value: ['<p>123456</p>'] }]
+        }
+      ]
+    }).then(({ status, body }) => {
+      expect(status).to.eq(200)
+      const id = body.data.id
+      created.push(id)
+      cy.intercept('PUT', `**/api/v1/automations/rules/${id}`).as('saveKeywordRule')
+
+      openRule(id)
+      assertKeywordForm(keyword)
+      // Switching operators clears the saved chips before entering a replacement.
+      pickOption('contains any of', /^equals$/)
+      pickOption('equals', /^contains any of$/)
+      conditionRows().eq(0).contains('span', /^优惠券$/).should('not.exist')
+      conditionRows().eq(0).find('input').filter(':visible').type(`${editedKeyword}{enter}`)
+      conditionRows().eq(0).contains('span', editedKeyword).should('be.visible')
+      cy.get('input[name="name"]').clear().type(`${keywordRuleName} edited`)
+      cy.get('button[type="submit"]').click()
+      cy.wait('@saveKeywordRule').then(({ request, response }) => {
+        expect(response.statusCode).to.eq(200)
+        expect(request.body.type).to.eq('conversation_update')
+        expect(request.body.events).to.deep.eq([incomingEvent])
+        expect(request.body.rules[0].groups[0].rules[0]).to.include({
+          field: 'content',
+          field_type: 'conversation',
+          operator: 'contains',
+          value: editedKeyword,
+          case_sensitive_match: false
+        })
+        const action = request.body.rules[0].actions[0]
+        expect(action.type).to.eq('send_reply')
+        expect(action.value).to.have.length(1)
+        expect(action.value[0]).to.include('123456')
+      })
+
+      openRule(id)
+      cy.get('input[name="name"]').should('have.value', `${keywordRuleName} edited`)
+      assertKeywordForm(editedKeyword)
+    })
+  })
+})

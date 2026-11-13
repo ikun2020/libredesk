@@ -19,6 +19,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/go-i18n"
 	"github.com/lib/pq"
+	"github.com/volatiletech/null/v9"
 	"github.com/zerodha/logf"
 )
 
@@ -286,6 +287,35 @@ func (e *Engine) UpdateRuleExecutionMode(ruleType, mode string) error {
 	// Reload rules.
 	e.ReloadRules()
 	return nil
+}
+
+// EvaluateMessageRules evaluates content against the message that raised the event,
+// not the conversation preview, which another message or reopening activity may have replaced.
+// Only the queued copy changes; webhooks and other consumers keep the stored conversation.
+func (e *Engine) EvaluateMessageRules(conversation cmodels.Conversation, message cmodels.Message, isNewConversation bool, previousValues map[string]string) {
+	var eventType string
+	actorID := conversation.ContactID
+	switch message.Type {
+	case cmodels.MessageIncoming:
+		eventType = models.EventConversationMessageIncoming
+	case cmodels.MessageOutgoing:
+		if !message.ShouldEvaluateAutomation(e.systemUserID) {
+			return
+		}
+		eventType = models.EventConversationMessageOutgoing
+		actorID = message.SenderID
+	default:
+		return
+	}
+
+	// Empty text is intentional (for example, an image-only message). Never fall
+	// back to an older message, which could repeat an unrelated keyword reply.
+	conversation.LastMessage = null.StringFrom(message.TextContent)
+	if isNewConversation && message.Type == cmodels.MessageIncoming {
+		e.EvaluateNewConversationRules(conversation)
+		return
+	}
+	e.EvaluateConversationUpdateRules(conversation, eventType, previousValues, umodels.User{ID: actorID})
 }
 
 // EvaluateNewConversationRules enqueues a new conversation for rule evaluation.

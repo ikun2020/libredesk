@@ -292,6 +292,16 @@ export function useConversationFilters () {
         }
     }))
 
+    const conversationUpdateFilters = computed(() => ({
+        content: {
+            label: t('globals.terms.content'),
+            type: FIELD_TYPE.TEXT,
+            operators: FIELD_OPERATORS.TEXT_AUTOMATION,
+            allowCaseSensitive: true
+        },
+        ...conversationFilters.value
+    }))
+
     const conversationActions = computed(() => ({
         assign_team: {
             label: t('actions.assignTeam'),
@@ -394,6 +404,7 @@ export function useConversationFilters () {
     return {
         conversationsListFilters,
         conversationFilters,
+        conversationUpdateFilters,
         newConversationFilters,
         conversationActions,
         macroActions,

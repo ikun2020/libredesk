@@ -288,7 +288,12 @@ func (m *Manager) sendOutgoingMessage(message models.Message) {
 		m.BroadcastConversationUpdate(message.ConversationUUID, wsData)
 
 		if message.ShouldEvaluateAutomation(systemUser.ID) {
-			m.automation.EvaluateConversationUpdateRulesByID(message.ConversationID, "", amodels.EventConversationMessageOutgoing, umodels.User{ID: message.SenderID})
+			updatedConversation, err := m.GetConversation(message.ConversationID, "", "")
+			if err != nil {
+				m.lo.Error("error fetching conversation for outgoing message rules", "conversation_id", message.ConversationID, "error", err)
+			} else {
+				m.automation.EvaluateMessageRules(updatedConversation, message, false, nil)
+			}
 		}
 	}
 }
@@ -1633,7 +1638,7 @@ func (m *Manager) ProcessIncomingMessageHooks(message models.Message, isNewConve
 		if err == nil {
 			conversation.IncomingTo = recipients.To
 			m.webhookStore.TriggerEvent(wmodels.EventConversationCreated, conversation)
-			m.automation.EvaluateNewConversationRules(conversation)
+			m.automation.EvaluateMessageRules(conversation, message, true, nil)
 		}
 		return nil
 	}
@@ -1663,7 +1668,7 @@ func (m *Manager) ProcessIncomingMessageHooks(message models.Message, isNewConve
 		m.lo.Error("error fetching conversation for incoming message hooks", "conversation_uuid", conversationUUID, "error", err)
 	} else {
 		// Trigger automations on incoming message event.
-		m.automation.EvaluateConversationUpdateRules(conversation, amodels.EventConversationMessageIncoming, previousValues, umodels.User{ID: conversation.ContactID})
+		m.automation.EvaluateMessageRules(conversation, message, false, previousValues)
 
 		go m.NotifyNewReply(conversation, message, reopened)
 

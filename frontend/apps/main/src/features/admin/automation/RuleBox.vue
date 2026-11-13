@@ -252,8 +252,12 @@ const fieldTypeConstants = {
   conversation: 'conversation',
   contact_custom_attribute: 'contact_custom_attribute'
 }
-const { conversationFilters, newConversationFilters, contactCustomAttributes } =
-  useConversationFilters()
+const {
+  conversationFilters,
+  conversationUpdateFilters,
+  newConversationFilters,
+  contactCustomAttributes
+} = useConversationFilters()
 const hasContactCustomAttributes = computed(
   () => Object.keys(contactCustomAttributes.value).length > 0
 )
@@ -265,7 +269,7 @@ const { t } = useI18n()
 const currentFilters = computed(() => {
   if (props.contactsOnly) return {}
   if (props.type === 'new_conversation') return newConversationFilters.value
-  if (props.type === 'conversation_update') return conversationFilters.value
+  if (props.type === 'conversation_update') return conversationUpdateFilters.value
   // previous_* values only exist on conversation update events.
   const filters = { ...conversationFilters.value }
   for (const key of Object.keys(filters)) {
