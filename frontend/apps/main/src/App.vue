@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-dvh w-full gap-1 bg-canvas p-1 text-foreground">
+  <div class="app-shell flex h-dvh w-full gap-1 bg-canvas p-1 text-foreground">
     <SidebarProvider v-if="!isMobile" style="--sidebar-width: 3rem" class="w-auto z-50">
       <ShadcnSidebar collapsible="none" class="overflow-hidden rounded-xl">
         <SidebarContent>
@@ -132,12 +132,14 @@ import SidebarNavUser from '@main/components/sidebar/SidebarNavUser.vue'
 import NotificationBell from '@main/components/sidebar/NotificationBell.vue'
 import PrimaryNavItems from '@main/components/sidebar/PrimaryNavItems.vue'
 import { useIsMobile } from '@shared-ui/composables'
+import { useVisualViewportHeight } from '@main/composables/useVisualViewportHeight'
 import api from '@main/api'
 import { usePushNotifications } from '@/composables/usePushNotifications'
 
 const route = useRoute()
 const emitter = useEmitter()
 const isMobile = useIsMobile()
+useVisualViewportHeight()
 
 // Remember last inbox path so navigating back from admin/contacts/reports restores it
 const lastInboxPath = useStorage('lastInboxPath', '')
@@ -307,6 +309,12 @@ const refreshViews = async (data) => {
 </script>
 
 <style scoped>
+@media (pointer: coarse) {
+  .app-shell {
+    height: var(--visual-viewport-height, 100dvh);
+  }
+}
+
 :deep(.group\/sidebar-wrapper) {
   min-height: auto !important;
   height: 100%;

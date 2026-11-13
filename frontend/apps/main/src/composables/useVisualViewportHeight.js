@@ -1,18 +1,27 @@
 import { onMounted, onUnmounted } from 'vue'
 
-// iOS Safari and Chrome Android keep dvh at full height while the soft keyboard is up; visualViewport tracks the space actually left.
+// The visual viewport tracks the space left above an overlay keyboard on iOS.
 export function useVisualViewportHeight () {
   const viewport = window.visualViewport
-  const update = () =>
-    document.documentElement.style.setProperty(
-      '--visual-viewport-height',
-      `${viewport?.height || window.innerHeight}px`
-    )
+  const property = '--visual-viewport-height'
+  const rootStyle = document.documentElement.style
+  const previousHeight = rootStyle.getPropertyValue(property)
+  const update = () => {
+    // Pinch zoom also shrinks visualViewport; keep the existing layout while zoomed.
+    if (viewport?.scale && viewport.scale !== 1) return
+    rootStyle.setProperty(property, `${viewport?.height || window.innerHeight}px`)
+  }
 
   onMounted(() => {
     update()
-    ;(viewport || window).addEventListener('resize', update)
+    viewport?.addEventListener('resize', update)
+    window.addEventListener('resize', update)
   })
 
-  onUnmounted(() => (viewport || window).removeEventListener('resize', update))
+  onUnmounted(() => {
+    viewport?.removeEventListener('resize', update)
+    window.removeEventListener('resize', update)
+    if (previousHeight) rootStyle.setProperty(property, previousHeight)
+    else rootStyle.removeProperty(property)
+  })
 }

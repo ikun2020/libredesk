@@ -1,9 +1,11 @@
 <template>
-  <!-- Set fixed width only when not in fullscreen. -->
-  <div class="flex flex-col h-full" :class="{ 'max-h-[600px]': !isFullscreen }">
+  <div
+    class="reply-box-content flex min-h-0 flex-col h-full"
+    :class="{ 'reply-box-content-inline max-h-[600px]': !isFullscreen }"
+  >
     <!-- Message type toggle -->
     <div
-      class="flex items-center justify-between"
+      class="reply-box-header flex shrink-0 items-center justify-between"
       :class="{ 'mb-4': !isFullscreen, 'border-b border-border pb-4': isFullscreen }"
     >
       <Tabs v-model="messageType" class="rounded-lg">
@@ -36,6 +38,9 @@
           <Minus class="translate-y-1" />
         </Button>
         <Button
+          type="button"
+          data-testid="reply-fullscreen-toggle"
+          :aria-label="t(isFullscreen ? 'globals.terms.collapse' : 'globals.terms.expand')"
           class="text-muted-foreground max-md:h-11 max-md:w-11 max-md:p-0"
           variant="ghost"
           @click="toggleFullscreen"
@@ -45,6 +50,7 @@
       </div>
     </div>
 
+    <div class="reply-box-body flex min-h-0 flex-1 flex-col overflow-y-auto">
     <!-- To, CC, and BCC fields -->
     <div v-if="conversationStore.current.inbox_channel === 'email'">
       <div
@@ -157,7 +163,7 @@
     </div>
 
     <!-- Main tiptap editor -->
-    <div class="flex-grow flex flex-col overflow-hidden">
+    <div class="reply-box-editor min-h-[70px] flex-grow flex flex-col overflow-hidden">
       <Editor
         ref="editorRef"
         v-model:htmlContent="htmlContent"
@@ -196,10 +202,11 @@
       v-if="uploadedFiles.length > 0 || uploadingFiles.length > 0"
       class="mt-2"
     />
+    </div>
 
     <!-- Editor menu bar with send button -->
     <ReplyBoxMenuBar
-      class="mt-2"
+      class="mt-2 shrink-0"
       :isFullscreen="isFullscreen"
       :isWhatsApp="isWhatsAppReply"
       :showWhatsAppTemplate="isWhatsAppReply"
@@ -529,3 +536,26 @@ const focus = () => {
 }
 defineExpose({ focus })
 </script>
+
+<style scoped>
+@media (pointer: coarse) {
+  .reply-box-content-inline {
+    /* Leave room for the conversation header and recent messages above the composer. */
+    max-height: min(20rem, calc(var(--visual-viewport-height, 100dvh) - 8rem));
+  }
+
+  .reply-box-content-inline .reply-box-header {
+    margin-bottom: 0.5rem;
+  }
+
+  .reply-box-content-inline .reply-box-editor {
+    flex-shrink: 0;
+    min-height: 3rem;
+    max-height: clamp(3rem, calc(var(--visual-viewport-height, 100dvh) * 0.25), 8rem);
+  }
+
+  .reply-box-content-inline :deep(.tiptap.ProseMirror) {
+    min-height: 3rem;
+  }
+}
+</style>

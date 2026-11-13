@@ -184,7 +184,7 @@
 
 <script setup>
 import { ref, watch, computed, toRaw, nextTick, onMounted, onUnmounted } from 'vue'
-import { useStorage } from '@vueuse/core'
+import { useMediaQuery, useStorage } from '@vueuse/core'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { getTextFromHTML } from '@shared-ui/utils/string'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
@@ -211,7 +211,6 @@ import { Dialog, DialogContent } from '@shared-ui/components/ui/dialog'
 import { Button } from '@shared-ui/components/ui/button'
 import ToolApprovalDetails from '@/features/conversation/ToolApprovalDetails.vue'
 import { Pencil, Paperclip } from 'lucide-vue-next'
-import { useVisualViewportHeight } from '@main/composables/useVisualViewportHeight'
 import { useIsComposerCramped } from '@main/composables/useIsComposerCramped'
 import { useEmitter } from '@main/composables/useEmitter'
 import { useFileUpload } from '@main/composables/useFileUpload'
@@ -227,7 +226,7 @@ const inboxStore = useInboxStore()
 const emitter = useEmitter()
 const userStore = useUserStore()
 const isCramped = useIsComposerCramped()
-useVisualViewportHeight()
+const isTouchPrimary = useMediaQuery('(pointer: coarse)')
 
 const canSendReply = computed(() => userStore.can(perms.MESSAGES_WRITE))
 const canSendPrivateNote = computed(() => userStore.can(perms.MESSAGES_WRITE_PRIVATE))
@@ -338,7 +337,17 @@ const {
 
 // Rest of existing state
 const isEditorFullscreen = ref(false)
-const isMinimized = useStorage('replyBoxMinimized', false)
+const desktopMinimized = useStorage('replyBoxMinimized', false)
+// Always start with an editable composer on touch devices, independent of the
+// saved desktop preference. A user's explicit minimize lasts for this view.
+const touchMinimized = ref(false)
+const isMinimized = computed({
+  get: () => isTouchPrimary.value ? touchMinimized.value : desktopMinimized.value,
+  set: (value) => {
+    if (isTouchPrimary.value) touchMinimized.value = value
+    else desktopMinimized.value = value
+  }
+})
 const isSending = ref(false)
 const isGenerating = ref(false)
 const to = ref('')
@@ -445,12 +454,6 @@ const setMessageTypeFromPalette = (type) => {
 }
 
 const focusFromPalette = () => {
-  // The cramped layout renders no editor until the fullscreen dialog opens.
-  if (isCramped.value && !isEditorFullscreen.value) {
-    isEditorFullscreen.value = true
-    nextTick(() => fullscreenContentRef.value?.focus())
-    return
-  }
   if (isMinimized.value) {
     isMinimized.value = false
     nextTick(() => replyBoxContentRef.value?.focus())
@@ -461,7 +464,7 @@ const focusFromPalette = () => {
 
 const toggleMinimize = () => {
   // Unmounting the editor mid AI rewrite drops the result and leaves isGenerating stuck.
-  if (isCramped.value || isEditorFullscreen.value || isGenerating.value) return
+  if (isEditorFullscreen.value || isGenerating.value) return
   isMinimized.value = !isMinimized.value
   if (!isMinimized.value) nextTick(() => replyBoxContentRef.value?.focus())
 }
@@ -490,11 +493,10 @@ const hasTextContent = computed(() => {
 // textContent stays empty while the composer is collapsed, no editor is mounted to fill it.
 const draftPreview = computed(() => textContent.value.trim() || getTextFromHTML(htmlContent.value))
 
-const isCollapsed = computed(() => isCramped.value || isMinimized.value)
+const isCollapsed = computed(() => isMinimized.value)
 
 const expandComposer = () => {
-  if (isCramped.value) isEditorFullscreen.value = true
-  else isMinimized.value = false
+  isMinimized.value = false
 }
 
 const attachmentCount = computed(() => mediaFiles.value.length + uploadingFiles.value.length)
