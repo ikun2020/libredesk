@@ -64,6 +64,7 @@ export function createViewportRecorder ({ win = window, version = '' } = {}) {
         bottom: safeStyle.paddingBottom, left: safeStyle.paddingLeft
       } : null,
       viewportHeight: win.getComputedStyle(doc.documentElement).getPropertyValue('--visual-viewport-height').trim(),
+      viewportPageTop: win.getComputedStyle(doc.documentElement).getPropertyValue('--visual-viewport-page-top').trim(),
       editableFocused: Boolean(focused?.matches('input, textarea, select, [role="textbox"]') ||
         focused?.isContentEditable || focused?.closest('[contenteditable="true"], [contenteditable=""]'))
     }

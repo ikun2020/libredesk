@@ -4,8 +4,11 @@ import { onMounted, onUnmounted } from 'vue'
 export function useVisualViewportHeight () {
   const viewport = window.visualViewport
   const property = '--visual-viewport-height'
+  const topProperty = '--visual-viewport-page-top'
   const rootStyle = document.documentElement.style
   const previousHeight = rootStyle.getPropertyValue(property)
+  const previousTop = rootStyle.getPropertyValue(topProperty)
+  let keyboardTop = 0
   let frame = null
   let timers = []
 
@@ -25,6 +28,27 @@ export function useVisualViewportHeight () {
       viewport.offsetTop === 0 && viewport.offsetLeft === 0
   }
 
+  const isEditable = element => Boolean(
+    element?.matches('input, textarea, select, [role="textbox"]') ||
+    element?.isContentEditable || element?.closest('[contenteditable="true"], [contenteditable=""]')
+  )
+
+  const updateKeyboardTop = height => {
+    const active = document.activeElement
+    const editing = isEditable(active)
+    const editingShell = editing && document.querySelector('.app-shell')?.contains(active)
+    // Keep the current origin during keyboard dismissal, when focus can leave
+    // the editor before the viewport expands. A body-portal editor must not
+    // reposition the background shell.
+    const followsKeyboard = editingShell || (keyboardTop > 0 && !editing)
+    keyboardTop = viewport?.scale === 1 && window.matchMedia('(pointer: coarse)').matches &&
+      height < document.documentElement.clientHeight && followsKeyboard &&
+      Number.isFinite(viewport.pageTop) ? Math.max(0, viewport.pageTop) : 0
+    // The shell stays in document flow. pageTop is already a document coordinate;
+    // adding scrollY or offsetTop would count WebKit's keyboard pan twice.
+    rootStyle.setProperty(topProperty, `${keyboardTop}px`)
+  }
+
   const update = () => {
     // Suspended documents can report zero or stale viewport dimensions.
     if (document.hidden) return false
@@ -33,6 +57,7 @@ export function useVisualViewportHeight () {
     const height = viewport ? viewport.height : window.innerHeight
     if (!Number.isFinite(height) || height <= 0) return false
     rootStyle.setProperty(property, `${height}px`)
+    updateKeyboardTop(height)
     return true
   }
 
@@ -45,9 +70,7 @@ export function useVisualViewportHeight () {
     // The app scrolls its inner panes, not the document. iOS can restore a
     // displaced root scroll position after resuming a standalone window. Do not
     // fight keyboard panning or touch any pane's scroll, focus, or draft.
-    const active = document.activeElement
-    if (active?.matches('input, textarea, select, [role="textbox"]') ||
-      active?.isContentEditable || active?.closest('[contenteditable="true"]')) return
+    if (isEditable(document.activeElement) || keyboardTop > 0) return
     if (window.scrollX !== 0 || window.scrollY !== 0) {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     }
@@ -82,6 +105,8 @@ export function useVisualViewportHeight () {
     window.addEventListener('focus', resume)
     window.addEventListener('orientationchange', resume)
     document.addEventListener('visibilitychange', resume)
+    document.addEventListener('focusin', update)
+    document.addEventListener('focusout', update)
   })
 
   onUnmounted(() => {
@@ -93,7 +118,11 @@ export function useVisualViewportHeight () {
     window.removeEventListener('focus', resume)
     window.removeEventListener('orientationchange', resume)
     document.removeEventListener('visibilitychange', resume)
+    document.removeEventListener('focusin', update)
+    document.removeEventListener('focusout', update)
     if (previousHeight) rootStyle.setProperty(property, previousHeight)
     else rootStyle.removeProperty(property)
+    if (previousTop) rootStyle.setProperty(topProperty, previousTop)
+    else rootStyle.removeProperty(topProperty)
   })
 }

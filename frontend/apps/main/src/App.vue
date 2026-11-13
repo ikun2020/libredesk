@@ -313,6 +313,8 @@ const refreshViews = async (data) => {
 <style scoped>
 @media (pointer: coarse) {
   .app-shell {
+    position: relative;
+    top: var(--visual-viewport-page-top, 0px);
     height: var(--visual-viewport-height, 100dvh);
   }
 }
