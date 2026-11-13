@@ -224,7 +224,7 @@ const RECIPIENT_INPUT_CLASS =
 const RECIPIENT_TOGGLE_CLASS = 'shrink-0 px-2 text-muted-foreground'
 
 import { ref, computed, nextTick, watch, useId } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
+import { useDebounceFn, useMediaQuery } from '@vueuse/core'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { MACRO_CONTEXT } from '@main/constants/conversation'
 import { Maximize2, Minimize2, Minus, X } from 'lucide-vue-next'
@@ -378,6 +378,7 @@ const isWhatsAppReply = computed(
     messageType.value !== 'private_note'
 )
 const isCramped = useIsComposerCramped()
+const isTouchPrimary = useMediaQuery('(pointer: coarse)')
 const emitter = useEmitter()
 const { t } = useI18n()
 const recipientId = useId()
@@ -510,7 +511,13 @@ watch(
   [messageType, () => props.isDraftLoading, () => conversationStore.current?.uuid],
   async () => {
     await nextTick()
-    if (props.isDraftLoading || document.activeElement?.matches('input, textarea')) return
+    // Let touch users focus the editor directly, without scrolling or reopening the keyboard
+    // when a draft finishes loading or the reply mode changes.
+    if (
+      isTouchPrimary.value ||
+      props.isDraftLoading ||
+      document.activeElement?.matches('input, textarea')
+    ) return
     editorRef.value?.focus()
   },
   { immediate: true, flush: 'post' }

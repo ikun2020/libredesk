@@ -1,6 +1,7 @@
 import { useMediaQuery } from '@vueuse/core'
 
-// The inline composer needs ~280px of height.
+// Touch devices need the keyboard-aware fullscreen composer even when unfolded.
+// Never switch editors based on height: opening the keyboard can resize it.
 export function useIsComposerCramped () {
-  return useMediaQuery('(max-width: 767px), (max-height: 500px) and (pointer: coarse)')
+  return useMediaQuery('(max-width: 767px), (pointer: coarse)')
 }

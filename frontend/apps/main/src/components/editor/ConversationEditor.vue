@@ -1,6 +1,6 @@
 <template>
   <div
-    class="editor-wrapper flex flex-col h-full overflow-y-auto"
+    class="editor-wrapper flex flex-col h-full min-h-0 overflow-y-auto"
     :class="{ 'pointer-events-none': disabled }"
   >
     <BubbleMenu
@@ -17,7 +17,7 @@
         @ai-generation-change="emit('aiGenerationChange', $event)"
       />
     </BubbleMenu>
-    <EditorContent :editor="editor" class="native-html" />
+    <EditorContent :editor="editor" class="native-html flex min-h-0 flex-1 flex-col" />
 
     <EditorLinkDialog ref="linkDialog" :editor="editor" :allow-button="false" />
   </div>
