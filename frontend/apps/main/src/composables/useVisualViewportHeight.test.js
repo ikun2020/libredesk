@@ -110,6 +110,52 @@ describe('visual viewport height', () => {
     expect(height()).toBe('')
   })
 
+  it('updates the shell after a standalone resume reports scale 0.912 with matching layout width', () => {
+    standaloneTouch()
+    vi.stubGlobal('innerWidth', 867)
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(867)
+    const viewport = mockViewport({ width: 867, height: 669, offsetTop: 0, offsetLeft: 0 })
+    mount()
+    expect(height()).toBe('669px')
+
+    // Reproduce the measurements in the device report: a transient portrait
+    // height is published before backgrounding, then a smaller viewport returns.
+    viewport.height = 596
+    window.dispatchEvent(new Event('orientationchange'))
+    hidden.mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    Object.assign(viewport, { height: 587, scale: 0.912 })
+    viewport.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('596px')
+    hidden.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(height()).toBe('587px')
+    expect(window.scrollTo).not.toHaveBeenCalled()
+
+    Object.assign(viewport, { height: 669, scale: 1 })
+    viewport.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('669px')
+  })
+
+  it.each(['zoomed width', 'stale layout width', 'panned', 'browser tab'])(
+    'preserves the existing height for a sub-unit scale with %s',
+    mode => {
+      if (mode !== 'browser tab') standaloneTouch()
+      vi.stubGlobal('innerWidth', 867)
+      const clientWidth = vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(867)
+      const viewport = mockViewport({ width: 867, height: 669, offsetTop: 0, offsetLeft: 0 })
+      mount()
+      Object.assign(viewport, { height: 587, scale: 0.912 })
+      if (mode === 'zoomed width') viewport.width = 951
+      if (mode === 'stale layout width') clientWidth.mockReturnValue(951)
+      if (mode === 'panned') viewport.offsetTop = 20
+      window.dispatchEvent(new Event('pageshow'))
+      vi.advanceTimersByTime(1000)
+      expect(height()).toBe('669px')
+      expect(window.scrollTo).not.toHaveBeenCalled()
+    }
+  )
+
   it('remeasures on foreground return and again after the viewport settles without a resize event', () => {
     const viewport = mockViewport()
     mount()

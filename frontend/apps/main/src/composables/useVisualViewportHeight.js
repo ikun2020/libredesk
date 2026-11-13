@@ -9,11 +9,27 @@ export function useVisualViewportHeight () {
   let frame = null
   let timers = []
 
+  const isStandaloneTouch = () =>
+    (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) &&
+    window.matchMedia('(pointer: coarse)').matches
+
+  const fitsLayoutViewport = () => {
+    // Some standalone resumes leave WebKit reporting a sub-unit scale even
+    // though the visual and layout widths still match. Do not freeze the shell
+    // at its pre-suspension height in that case. A real pinch/pan changes the
+    // visible width or offsets; keep its layout unchanged.
+    return viewport && viewport.scale > 0 && viewport.scale < 1 && isStandaloneTouch() &&
+      Number.isFinite(viewport.width) && viewport.width > 0 &&
+      Math.abs(viewport.width - window.innerWidth) < 1 &&
+      Math.abs(viewport.width - document.documentElement.clientWidth) < 1 &&
+      viewport.offsetTop === 0 && viewport.offsetLeft === 0
+  }
+
   const update = () => {
     // Suspended documents can report zero or stale viewport dimensions.
     if (document.hidden) return false
     // Pinch zoom also shrinks visualViewport; keep the existing layout while zoomed.
-    if (viewport && viewport.scale !== 1) return false
+    if (viewport && viewport.scale !== 1 && !fitsLayoutViewport()) return false
     const height = viewport ? viewport.height : window.innerHeight
     if (!Number.isFinite(height) || height <= 0) return false
     rootStyle.setProperty(property, `${height}px`)
@@ -23,9 +39,8 @@ export function useVisualViewportHeight () {
   const restore = () => {
     if (!update()) return
 
-    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true
-    if (!standalone || !window.matchMedia('(pointer: coarse)').matches) return
+    // Updating a matching shell height does not authorize resetting zoom/pan.
+    if ((viewport && viewport.scale !== 1) || !isStandaloneTouch()) return
 
     // The app scrolls its inner panes, not the document. iOS can restore a
     // displaced root scroll position after resuming a standalone window. Do not
