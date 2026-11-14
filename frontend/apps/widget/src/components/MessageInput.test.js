@@ -104,6 +104,53 @@ afterEach(() => {
   host?.remove()
 })
 
+describe('composer focus', () => {
+  it.each(['text padding', 'border', 'toolbar space', 'outer padding'])(
+    'focuses the textarea with one click on %s',
+    async (area) => {
+      await mount()
+      const textarea = host.querySelector('textarea')
+      const padding = textarea.parentElement
+      const container = padding.parentElement
+      const targets = {
+        'text padding': padding,
+        border: container,
+        'toolbar space': container.lastElementChild,
+        'outer padding': container.parentElement
+      }
+      const target = targets[area]
+      const outside = document.createElement('button')
+      host.append(outside)
+      outside.focus()
+
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await settle()
+
+      expect(document.activeElement).toBe(textarea)
+    }
+  )
+
+  it('leaves native textarea selection and toolbar button focus alone', async () => {
+    chat.drafts.new = 'Keep this selection'
+    await mount()
+    const textarea = host.querySelector('textarea')
+    textarea.setSelectionRange(5, 9)
+    const focus = vi.spyOn(textarea, 'focus')
+    textarea.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await settle()
+    expect(focus).not.toHaveBeenCalled()
+    expect(textarea.selectionStart).toBe(5)
+    expect(textarea.selectionEnd).toBe(9)
+
+    const attach = host.querySelector('[aria-label="globals.messages.attachFile"]')
+    attach.focus()
+    attach.click()
+    await settle()
+    expect(focus).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(attach)
+  })
+})
+
 describe('first-message attachments', () => {
   it('starts a conversation with the file and retains the unsent text draft', async () => {
     chat.drafts.new = 'Keep this text until I send it'

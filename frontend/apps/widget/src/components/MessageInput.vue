@@ -9,13 +9,14 @@
       @select="sendQuickReply"
     />
     <!-- Message Input -->
-    <div class="p-2 border-t">
+    <div class="p-2 border-t" @click.self="focusTextarea">
       <!-- Unified Input Container -->
       <div
         class="border border-input rounded-lg bg-background transition-colors duration-150 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
+        @click.self="focusTextarea"
       >
         <!-- Textarea Container -->
-        <div class="p-2">
+        <div class="p-2" @click.self="focusTextarea">
           <Textarea
             v-model="newMessage"
             @keydown="handleKeydown"
@@ -31,7 +32,7 @@
         </div>
 
         <!-- Actions and Send Button -->
-        <div class="flex justify-between items-center px-2 pb-2">
+        <div class="flex justify-between items-center px-2 pb-2" @click.self="focusTextarea">
           <!-- Message Input Actions (file upload + emoji) -->
           <MessageInputActions
             :fileUploadEnabled="config.features?.file_upload || false"
