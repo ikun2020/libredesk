@@ -223,5 +223,7 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 - 逐项核对上游 48 个文件改动：自动回复消息快照、iPhone 正常流视口补偿、桌面 Enter、首附件发送、签名会话撤销与轻量访客身份隔离均保留。共同 SQL 文件保留上游客服排序改进和轻量资料更新的 visitor 类型、启用状态、外部身份约束。
 - 轻量版接入说明见 [XBOARD_LITE.md](XBOARD_LITE.md)。只更新当前随机凭据所属访客的邮箱及允许的属性，不按邮箱合并身份；资料来自浏览器，仅供参考。签名版接口继续保留。
 - 合并后完整前端回归使用 [五分片 CI](https://github.com/ikun2020/libredesk/actions/runs/43565876276)，对应应用代码 `495e01ec`。首次 Go 数据库回归发现测试收件箱缺少 `from` 字段，授权逻辑执行前就扫描失败；本次仅补齐测试数据并提前检查其可读性，不改变应用逻辑，保留全部权限及持久化断言。
-- 最终发布在修正后的提交上手动运行 Go/PostgreSQL 工作流；待 Go 和上述五分片前端全部成功，再手动发布同一提交的 GHCR 镜像并核对 revision、容器版本和 latest。提交中的 `[skip ci]` 只控制自动推送任务，避免验证完成前自动更新 latest，不豁免手动测试。
+- 修正后的 `1c124e48d1c718e92f344fbe6ece91653cbc1c28` 已通过 [Go/PostgreSQL 回归](https://github.com/ikun2020/libredesk/actions/runs/43566471791)。上述前端 CI 的五个分片均成功，81 个单测文件 / 1,247 项测试通过；该提交相对前端验证的 `495e01ec` 只改测试数据和本记录，应用代码相同。
+- 等全部检查成功后，手动发布 [最终镜像](https://github.com/ikun2020/libredesk/actions/runs/43566863751)：`ghcr.io/ikun2020/libredesk:sha-1c124e4`（linux/amd64），容器启动版本 `v2.9.2+git.1c124e48`。公开仓库校验 revision 为上述完整提交，固定标签和 `latest` 摘要均为 `sha256:406db6664d965fc6cb37a393317b95777768a097df4cdc974f0c318ca516d2cd`。
+- 测试修正提交使用 `[skip ci]` 控制自动推送任务，再手动执行 Go 验证与镜像发布，避免验证完成前自动更新 latest。本条发布结果的后续纯文档提交也跳过自动构建；不改变已验证的应用代码或镜像标签。
 - 原有未提交的重定向修正保留在工作区，未混入本次发布。未创建临时分支；本地与 fork 继续仅保留 main。浏览器回归不代表新增的 iPhone 真机后台恢复验证。
