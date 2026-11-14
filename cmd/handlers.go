@@ -380,7 +380,6 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	g.GET("/widget/ws", rateLimit(handleWidgetWS, "widget"))
 
 	// Widget APIs.
-	g.GET("/api/v1/widget/chat/security", rateLimit(handleWidgetSecurityProtocol, "widget"))
 	g.GET("/api/v1/widget/chat/settings/launcher", rateLimit(validateWidgetInbox(handleGetChatLauncherSettings), "widget"))
 	g.GET("/api/v1/widget/chat/settings", rateLimit(validateWidgetInbox(handleGetChatSettings), "widget"))
 	g.POST("/api/v1/widget/chat/campaigns/next", rateLimit(optionalWidgetAuth(handleWidgetCampaign), "widget"))
@@ -389,8 +388,6 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	g.GET("/api/v1/widget/chat/help/search", rateLimit(optionalWidgetAuth(handleWidgetHelpSearch), "widget"))
 	g.GET("/api/v1/widget/chat/help/articles/{article_slug}", rateLimit(optionalWidgetAuth(handleWidgetHelpArticle), "widget"))
 	g.POST("/api/v1/widget/chat/auth/exchange", rateLimit(validateWidgetInbox(handleAuthExchange), "widget"))
-	g.POST("/api/v1/widget/chat/auth/revoke", rateLimit(validateWidgetInbox(handleSecureWidgetRevoke), "widget"))
-	g.POST("/api/v1/widget/chat/auth/revoke-legacy", rateLimit(validateWidgetInbox(handleRevokeLegacyWidgetSessions), "widget"))
 	g.GET("/api/v1/widget/chat/auth/me", rateLimit(widgetAuth(handleWidgetAuthMe), "widget"))
 	g.POST("/api/v1/widget/chat/visitor/profile", rateLimit(widgetAuth(handleWidgetVisitorProfile), "widget"))
 	g.POST("/api/v1/widget/chat/conversations/init", rateLimit(widgetAuth(handleChatInit), "widget"))

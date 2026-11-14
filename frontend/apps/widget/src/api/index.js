@@ -3,11 +3,6 @@ import { createVisitorProfileSync } from '../utils/visitorProfile.js'
 
 let _sessionToken = ''
 let _visitorToken = ''
-let _sessionRefreshPending = false
-
-export function usesSecureIntegration() {
-  return new URLSearchParams(window.location.search).get('integration') === '1'
-}
 
 export function usesVisitorProfileIntegration() {
   return new URLSearchParams(window.location.search).get('integration') === 'lite'
@@ -38,7 +33,6 @@ function getInboxIDFromQuery() {
 
 export function setApiSessionToken(token) {
   _sessionToken = token || ''
-  _sessionRefreshPending = false
 }
 
 export function setVisitorToken(token) {
@@ -68,15 +62,6 @@ export function registerStores(stores) {
 // Clears all session state, cookies, and closes widget on 401/session expiry.
 function handleSessionExpired() {
   if (!_stores) return
-  // A bounded integration lease can expire while the page is suspended. Ask the
-  // authenticated parent to renew it without erasing the same user's draft.
-  if (usesSecureIntegration() && window.parent !== window) {
-    if (!_sessionRefreshPending) {
-      _sessionRefreshPending = true
-      postToParent({ type: 'REFRESH_AUTH_SESSION' })
-    }
-    return
-  }
   const { userStore, chatStore, widgetStore } = _stores
   userStore.clearSessionToken()
   clearVisitorToken()

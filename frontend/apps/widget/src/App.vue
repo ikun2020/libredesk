@@ -18,7 +18,7 @@ import { useWidgetStore } from './store/widget.js'
 import { useChatStore } from '@widget/store/chat.js'
 import { useUserStore } from './store/user.js'
 import { initWidgetWS, closeWidgetWebSocket, sendPageVisit, skipInitialWsSync } from './websocket.js'
-import api, { setApiSessionToken, initVisitorToken, saveSession, registerStores, usesSecureIntegration,
+import api, { setApiSessionToken, initVisitorToken, saveSession, registerStores,
   usesVisitorProfileIntegration, setVisitorProfile, clearVisitorProfile, flushVisitorProfile } from '@widget/api/index.js'
 import { useUnreadCount } from './composables/useUnreadCount.js'
 import { initAudioContext } from '@shared-ui/composables/useNotificationSound.js'
@@ -71,7 +71,7 @@ watch(
 
 onMounted(() => {
   setupParentMessageListeners()
-  window.parent.postMessage({ type: 'VUE_APP_READY', securityProtocol: 1, visitorProfileProtocol: 1 }, '*')
+  window.parent.postMessage({ type: 'VUE_APP_READY', visitorProfileProtocol: 1 }, '*')
 })
 
 const signalWidgetLoaded = async () => {
@@ -181,54 +181,36 @@ const setupParentMessageListeners = () => {
       }
     } else if (event.data.type === 'SET_LANGUAGE') {
       await setLanguage(event.data.language)
-    } else if (event.data.type === 'SET_JWT_TOKEN' ||
-               (event.data.type === 'REFRESH_JWT_TOKEN' && usesSecureIntegration())) {
+    } else if (event.data.type === 'SET_JWT_TOKEN') {
       const request = ++identityRequest
       clearVisitorProfile()
-      const preserveConversation = event.data.type === 'REFRESH_JWT_TOKEN'
       if (event.data.visitorToken) {
         initVisitorToken(event.data.visitorToken)
       }
       if (event.data.jwt) {
-        if (!preserveConversation) {
-          proactive.reset()
-          help.reset()
-          if (widgetStore.currentView === 'help') widgetStore.navigateToHome()
-          chatStore.drafts = {}
-          chatStore.preChatDraft = {}
-          chatStore.handoffDraft = {}
-          chatStore.conversations = null
-          chatStore.setCurrentConversation(null)
-        }
+        proactive.reset()
+        help.reset()
+        if (widgetStore.currentView === 'help') widgetStore.navigateToHome()
+        chatStore.drafts = {}
+        chatStore.preChatDraft = {}
+        chatStore.handoffDraft = {}
+        chatStore.conversations = null
+        chatStore.setCurrentConversation(null)
         try {
           const resp = await api.exchangeJWTForSession(event.data.jwt)
           if (request !== identityRequest) return
-          if (usesSecureIntegration() && resp.data.data.protocol !== 1) {
-            if (parentOrigin) window.parent.postMessage({ type: 'SECURE_AUTH_UNAVAILABLE' }, parentOrigin)
-            return
-          }
           const { session_token, user } = resp.data.data
           saveSession(session_token, user, userStore)
           // Session exists, fetchInitialConversations will load data. Skip WS sync.
           skipInitialWsSync()
-          if (preserveConversation) {
-            initializeWebSocket()
-            await chatStore.fetchConversations(true, true)
-            if (chatStore.currentConversation) {
-              await chatStore.loadConversation(chatStore.currentConversation.uuid, true, true)
-            }
-          } else {
-            chatStore.conversations = null
-            await fetchInitialConversations()
-          }
+          chatStore.conversations = null
+          await fetchInitialConversations()
           if (request === identityRequest) signalWidgetLoaded()
         } catch {
           // Axios errors can include the signed identity in config.data.
           console.error('Failed to exchange JWT for session')
           if (request !== identityRequest) return
-          if (usesSecureIntegration() && parentOrigin && window.parent !== window) {
-            window.parent.postMessage({ type: 'REFRESH_AUTH_SESSION' }, parentOrigin)
-          } else signalWidgetLoaded()
+          signalWidgetLoaded()
         }
       }
     } else if (event.data.type === 'CLEAR_SESSION') {

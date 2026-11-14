@@ -14,7 +14,7 @@ beforeEach(async () => {
   originalAdapter = axios.defaults.adapter
   parent = { postMessage: vi.fn() }
   Object.defineProperty(window, 'parent', { configurable: true, value: parent })
-  window.history.replaceState({}, '', '/widget?integration=1&parent_origin=https%3A%2F%2Fpanel.example.test')
+  window.history.replaceState({}, '', '/widget?parent_origin=https%3A%2F%2Fpanel.example.test')
   axios.defaults.adapter = async config => {
     const response = { status: 401, data: {}, headers: {}, config }
     throw new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, response)
@@ -38,18 +38,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-test('an expired integration lease asks the parent to renew without clearing the draft or closing chat', async () => {
-  await expect(client.default.getAuthMe()).rejects.toMatchObject({ response: { status: 401 } })
-  await expect(client.default.getAuthMe()).rejects.toMatchObject({ response: { status: 401 } })
-  expect(parent.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'REFRESH_AUTH_SESSION' }, 'https://panel.example.test')
-  expect(stores.userStore.clearSessionToken).not.toHaveBeenCalled()
-  expect(stores.chatStore.setCurrentConversation).not.toHaveBeenCalled()
-  expect(stores.chatStore.drafts.thread).toBe('unsent text')
-  expect(stores.widgetStore.closeWidget).not.toHaveBeenCalled()
-})
-
-test('normal embedded widgets retain their existing expiry behavior', async () => {
-  window.history.replaceState({}, '', '/widget?parent_origin=https%3A%2F%2Fpanel.example.test')
+test.each(['', 'lite'])('embedded widgets retain their existing expiry behavior (integration=%s)', async integration => {
+  window.history.replaceState({}, '', `/widget?integration=${integration}&parent_origin=https%3A%2F%2Fpanel.example.test`)
   await expect(client.default.getAuthMe()).rejects.toBeDefined()
   expect(stores.userStore.clearSessionToken).toHaveBeenCalledOnce()
   expect(stores.widgetStore.closeWidget).toHaveBeenCalledOnce()

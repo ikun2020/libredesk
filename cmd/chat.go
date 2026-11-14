@@ -55,11 +55,11 @@ type WidgetSession struct {
 	InboxID        int
 	IsVisitor      bool
 	ExternalUserID string
-	SecureScope    string
 }
 
 // Claims holds JWT claims for a JWT user.
 type Claims struct {
+	// Read only to reject capabilities from the retired XBoard signed integration.
 	Purpose                 string         `json:"purpose,omitempty"`
 	SessionID               string         `json:"session_id,omitempty"`
 	UserID                  int            `json:"user_id,omitempty"`
@@ -399,15 +399,6 @@ func handleAuthExchange(r *fastglue.Request) error {
 		app.lo.Warn("widget authentication rejected: invalid JWT", "inbox_id", inbox.ID, "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
 	}
-	secure := claims.Purpose != "" || claims.SessionID != ""
-	if secure {
-		if err := validateSecureWidgetClaims(claims, "login", time.Now()); err != nil {
-			return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
-		}
-		if err := checkSecureWidgetRevocation(app, inbox.ID, claims); err != nil {
-			return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
-		}
-	}
 
 	if claims.ExternalUserID == "" || len(claims.ExternalUserID) > maxExternalUserIDLength {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.Ts("globals.messages.required", "name", "external_user_id"), nil, envelope.InputError)
@@ -441,17 +432,6 @@ func handleAuthExchange(r *fastglue.Request) error {
 		if err := app.user.SaveCustomAttributes(contactID, claims.ContactCustomAttributes, false); err != nil {
 			app.lo.Error("error saving custom attributes during auth exchange", "contact_id", contactID, "error", err)
 		}
-	}
-	if secure {
-		token, err := exchangeSecureWidgetSession(app, contactID, inbox.ID, claims)
-		if err != nil {
-			return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
-		}
-		return r.SendEnvelope(map[string]any{
-			"protocol":      1,
-			"session_token": token,
-			"user":          map[string]any{"user_id": contactID, "is_visitor": false, "first_name": claims.FirstName, "last_name": claims.LastName},
-		})
 	}
 
 	ctx := context.Background()
@@ -1020,6 +1000,10 @@ func verifyStandardJWT(jwtToken string, inboxSecret string) (Claims, error) {
 	if err != nil {
 		return Claims{}, err
 	}
+	// In particular, an old logout capability must never become a native login.
+	if claims.Purpose != "" || claims.SessionID != "" {
+		return Claims{}, fmt.Errorf("retired widget authentication capability")
+	}
 
 	return *claims, nil
 }
@@ -1045,9 +1029,9 @@ func generateSessionToken(app *App, userID, inboxID int, isVisitor bool, externa
 		"external_user_id": externalUserID,
 	}
 	if !isVisitor {
-		epoch, err := app.redis.Get(ctx, legacyWidgetEpochKey(inboxID)).Result()
-		if err != nil && err != redis.Nil {
-			return "", fmt.Errorf("reading widget session epoch: %w", err)
+		epoch, err := existingWidgetSessionEpoch(app, inboxID)
+		if err != nil {
+			return "", err
 		}
 		fields["legacy_epoch"] = epoch
 	}
@@ -1060,8 +1044,8 @@ func generateSessionToken(app *App, userID, inboxID int, isVisitor bool, externa
 	return token, nil
 }
 
-// loadSession retrieves and validates a session. Legacy sessions refresh their
-// TTL here; secure integration sessions renew only through a signed exchange.
+// loadSession retrieves a session from Redis and refreshes its TTL using the
+// default duration for visitors and the current config duration for contacts.
 func loadSession(app *App, token string, config livechat.Config) (*WidgetSession, error) {
 	ctx := context.Background()
 	key := widgetSessionPrefix + token
@@ -1074,26 +1058,30 @@ func loadSession(app *App, token string, config livechat.Config) (*WidgetSession
 	if len(data) == 0 {
 		return nil, fmt.Errorf("session not found or expired")
 	}
+	// Never revive a retired short-lease session as a long-lived native session.
 	if data["secure_scope"] != "" {
-		if err := validateSecureWidgetSessionData(app, data); err != nil {
-			return nil, err
-		}
-	} else if err := validateLegacyWidgetSessionData(app, data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("retired widget session")
 	}
 
 	userID, _ := strconv.Atoi(data["user_id"])
 	inboxID, _ := strconv.Atoi(data["inbox_id"])
 	isVisitor, _ := strconv.ParseBool(data["is_visitor"])
+	if !isVisitor {
+		epoch, err := existingWidgetSessionEpoch(app, inboxID)
+		if err != nil {
+			return nil, err
+		}
+		if epoch != "" && epoch != data["legacy_epoch"] {
+			return nil, fmt.Errorf("widget session revoked")
+		}
+	}
 
 	ttl := getSessionDuration(config)
 	if isVisitor {
 		ttl = defaultSessionTTL
 	}
-	if data["secure_scope"] == "" {
-		if err := app.redis.Expire(ctx, key, ttl).Err(); err != nil {
-			app.lo.Warn("error refreshing widget session expiry", "inbox_id", inboxID, "contact_id", userID, "error", err)
-		}
+	if err := app.redis.Expire(ctx, key, ttl).Err(); err != nil {
+		app.lo.Warn("error refreshing widget session expiry", "inbox_id", inboxID, "contact_id", userID, "error", err)
 	}
 
 	return &WidgetSession{
@@ -1101,8 +1089,17 @@ func loadSession(app *App, token string, config livechat.Config) (*WidgetSession
 		InboxID:        inboxID,
 		IsVisitor:      isVisitor,
 		ExternalUserID: data["external_user_id"],
-		SecureScope:    data["secure_scope"],
 	}, nil
+}
+
+// Only honor existing revocation markers from the retired integration. No new
+// epochs are created; dropping this check would revive its old revoked tokens.
+func existingWidgetSessionEpoch(app *App, inboxID int) (string, error) {
+	epoch, err := app.redis.Get(context.Background(), fmt.Sprintf("widget_legacy_epoch:%d", inboxID)).Result()
+	if err != nil && err != redis.Nil {
+		return "", fmt.Errorf("reading widget session epoch: %w", err)
+	}
+	return epoch, nil
 }
 
 // deleteSessionToken removes a session from Redis.

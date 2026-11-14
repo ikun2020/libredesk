@@ -210,13 +210,6 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 | 2026-11-13 | 从 fork `2fc1999c` 合并上游 `0c6fae86`（PR #823，锁定的 `vue-letter` 从 0.2.2 升级到 0.2.3）。无文本冲突；两项定制代码、回归测试和 GHCR 工作流均保持原样。同步分支 `codex/sync-upstream-20261113`；同步前本地备份 `codex/backup-before-sync-20261113`。 |
 | 2026-11-13 | 按用户澄清，仅在明确要求 fork sync 时进行上游冲突检查及定制保留核查；日常修改仍做正常必要验证，不套用同步清单。长期仅保留 `main`，停止保留备份分支。 |
 
-## 2026-11-14：XBoard 同步安全协议与插件 1.1.0
-
-- 接入说明见 [XBOARD_SECURITY.md](XBOARD_SECURITY.md)。插件最终入口按用户要求为 `/api/v1/support-sync/loader.js?v=1.1.0`；使用同源随包脚本，不采用默认远程脚本自动适配或独立远程引导方案。
-- 保留邮箱及余额、已用流量、总流量、到期时间、套餐同步和原 `site_id:用户ID` 联系人。新增每个面板登录范围的十分钟认证租期、独立退出能力、原子撤销与重放拦截；旧收件箱认证会话一次性迁移，不删除联系人/聊天。
-- WebSocket 收发检查撤销状态；后台恢复重新签发身份时保留同账号草稿，换号/退出忽略迟到响应。插件不采集网址/标题，通用访问记录过滤查询参数与片段，错误日志去除凭据。
-- 后续升级须保留安全握手和 `/chat/security`、`/chat/auth/revoke`、`/chat/auth/revoke-legacy` 协议及对应 Go/Vitest 回归。未更改触屏编辑器、关键词自动回复和桌面 Enter 发送行为。
-
 ## 2026-11-14：用户 fork sync 与轻量资料接口发布
 
 - 用户在 GitHub 执行的合并为 `9c1c90f2736d846ccc3fa20bf96881b21d1fdc76`，父提交分别是本 fork 的轻量资料接口 `9abe298557f49d47b7845ef06879a1a3b1514d35` 与上游 `2d0617d79932d45f2b1cc8c538d7efe8be73b448`。随后 `495e01ec` 为 Go/前端 CI 增加手动触发入口，方便发布前验证。
@@ -227,3 +220,11 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 - 等全部检查成功后，手动发布 [最终镜像](https://github.com/ikun2020/libredesk/actions/runs/43566863751)：`ghcr.io/ikun2020/libredesk:sha-1c124e4`（linux/amd64），容器启动版本 `v2.9.2+git.1c124e48`。公开仓库校验 revision 为上述完整提交，固定标签和 `latest` 摘要均为 `sha256:406db6664d965fc6cb37a393317b95777768a097df4cdc974f0c318ca516d2cd`。
 - 测试修正提交使用 `[skip ci]` 控制自动推送任务，再手动执行 Go 验证与镜像发布，避免验证完成前自动更新 latest。本条发布结果的后续纯文档提交也跳过自动构建；不改变已验证的应用代码或镜像标签。
 - 原有未提交的重定向修正保留在工作区，未混入本次发布。未创建临时分支；本地与 fork 继续仅保留 main。浏览器回归不代表新增的 iPhone 真机后台恢复验证。
+
+## 2026-11-14：只维护 XBoard 轻量同步
+
+- 用户已在实际面板确认轻量版正常同步，要求移除此前安全版定制以减少上游合并负担。此清理不执行新的上游同步，不改变此前自动回复、DUO 输入、桌面 Enter 或首附件功能。
+- 移除 `dbae8a97` 引入的安全协议探测、短租期签发/续期、专用注销/迁移接口、WebSocket 扩展和配套安全版测试/说明。服务端默认 widget 加载器恢复原有实现；上游原生 JWT 功能保留。
+- 仅保留旧凭据兼容拒绝：旧 purpose/session_id 不能当普通登录签名，旧 secure_scope 记录不能当长期会话，已有 legacy_epoch 撤销标记继续生效。这些检查不提供安全版签发、续期或注销能力。
+- XBoard 只维护 `LibredeskSyncLite` 与 `/api/v1/support-sync-lite/loader.js`。保留邮箱和五项属性、访客身份隔离、iframe 源校验，以及轻量插件自带的颜色/图片校验、sandbox 和不采集网页地址行为。现有轻量版插件及页脚无需替换。
+- 移除工作区旧安全插件和过时补丁；更新安装说明，停止推荐切回安全版。历史联系人/会话、生产数据库和其他未提交工作不做清理。后续合并无需恢复已经移除的安全版接口。

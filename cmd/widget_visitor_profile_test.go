@@ -96,7 +96,7 @@ func TestVisitorProfileDoesNotCreateSessionOrChat(t *testing.T) {
 
 func TestWidgetVisitorProfileAuthorizationAndPersistence(t *testing.T) {
 	db := testutil.NewDB(t, "widget_visitor_profile")
-	app := newSecureWidgetTestApp(t)
+	app := newWidgetSessionTestApp(t)
 	app.i18n = testutil.NewI18n(t)
 	var err error
 	app.user, err = user.New(app.i18n, user.Opts{DB: db, Lo: app.lo})

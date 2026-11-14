@@ -56,8 +56,8 @@ test('a new session flushes the latest cached data after a real first message', 
   expect(requests[0].headers.Authorization).toBe('Bearer new-visitor')
 })
 
-test('verified mode and verified contacts never receive unsigned profiles', async () => {
-  window.history.replaceState({}, '', '/widget?integration=1')
+test('normal widgets and verified contacts never receive unsigned profiles', async () => {
+  window.history.replaceState({}, '', '/widget')
   expect(client.setVisitorProfile(profile)).toBe(false)
   await client.default.initChatConversation({ message: 'signed' })
   expect(JSON.parse(requests[0].data)).toEqual({ message: 'signed' })

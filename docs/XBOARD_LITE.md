@@ -1,11 +1,12 @@
 # Unsigned XBoard visitor profiles
 
-The separate `LibredeskSyncLite` XBoard plugin reads the signed-in browser's
+The `LibredeskSyncLite` XBoard plugin reads the signed-in browser's
 existing `/api/v1/user/info` and `/api/v1/user/getSubscribe` responses. It sends
 only email and five display attributes to a cross-origin chat iframe. It does
 not send an XBoard bearer token, subscription token/URL, account ID, or a JWT.
 
-This mode is optional and does not change the existing signed XBoard integration.
+This is the maintained XBoard integration. The former custom signed integration
+has been removed; LibreDesk's original JWT integration remains available.
 The profiles are **unverified browser statements**, not authorization, billing
 evidence, or a verified contact identity. The plugin needs no signing key and
 adds no XBoard tables. XBoard's own plugin manager still saves plugin settings.
@@ -38,11 +39,11 @@ The plugin's locally bundled widget maintains random visitor tokens in
 sessionStorage scoped to the tab, inbox, and a local digest of the XBoard login
 token. Logout or a changed login destroys the old iframe and clears its tokens;
 the digest is never sent to LibreDesk. Same-session profile updates preserve
-drafts. This is not the signed integration's cross-device identity continuity
-or server-side session-revocation guarantee.
+drafts. This does not provide cross-device identity continuity or server-side
+session revocation.
 
 Configure the livechat inbox to allow visitors. Existing Contact/Text attribute
-definitions from the signed plugin can be reused. An older LibreDesk iframe
+definitions can be reused. An older LibreDesk iframe
 without the capability flag continues ordinary visitor chat but receives no
 profile; the plugin reports that the companion server update is required.
 
@@ -54,3 +55,17 @@ logout cancellation, draft preservation, and signed-mode exclusion. Go tests
 cover strict decoding, missing/wrong/verified session rejection, same-email
 identity separation, SQL type guards, and unchanged conversation/message counts.
 The PostgreSQL tests use `LIBREDESK_TEST_DB_DSN` in CI.
+
+## Retiring the former signed plugin
+
+Existing Lite 1.0.0 installations and footer snippets are unchanged. Disable or
+uninstall the former `libredesk_sync` plugin in XBoard; keep `libredesk_sync_lite`.
+No application data or conversations need deleting, and the cleanup release
+does not add a database migration.
+
+The removed custom security, lease refresh and revoke endpoints are not used by
+Lite. A small compatibility check rejects the retired signed claims and stored
+secure sessions and continues honoring pre-existing legacy revocation epochs.
+It cannot issue or renew a retired session. This prevents rollback to ordinary
+JWT handling from reviving expired/revoked credentials. Ordinary JWT users and
+Lite's visitor sessions continue using their respective normal paths.
