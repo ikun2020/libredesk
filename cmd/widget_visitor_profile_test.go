@@ -109,11 +109,18 @@ func TestWidgetVisitorProfileAuthorizationAndPersistence(t *testing.T) {
 	}
 	var inboxID, otherInboxID int
 	var inboxUUID, otherInboxUUID string
-	if err := db.QueryRow(`INSERT INTO inboxes (name, channel) VALUES ('Visitor Profile', 'livechat') RETURNING id, uuid`).Scan(&inboxID, &inboxUUID); err != nil {
+	// Normal inbox creation supplies an empty From for livechat. Omitting it
+	// leaves SQL NULL, which cannot be scanned into the Inbox.From string.
+	if err := db.QueryRow(`INSERT INTO inboxes (name, channel, "from") VALUES ('Visitor Profile', 'livechat', '') RETURNING id, uuid`).Scan(&inboxID, &inboxUUID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`INSERT INTO inboxes (name, channel) VALUES ('Other Inbox', 'livechat') RETURNING id, uuid`).Scan(&otherInboxID, &otherInboxUUID); err != nil {
+	if err := db.QueryRow(`INSERT INTO inboxes (name, channel, "from") VALUES ('Other Inbox', 'livechat', '') RETURNING id, uuid`).Scan(&otherInboxID, &otherInboxUUID); err != nil {
 		t.Fatal(err)
+	}
+	for _, uuid := range []string{inboxUUID, otherInboxUUID} {
+		if _, err := app.inbox.GetDBRecord(uuid); err != nil {
+			t.Fatalf("invalid livechat inbox fixture: %v", err)
+		}
 	}
 	insert := func(typ, email string) int {
 		var id int

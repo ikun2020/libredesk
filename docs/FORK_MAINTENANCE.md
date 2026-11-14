@@ -16,8 +16,8 @@
 | 原项目 | [abhinavxd/libredesk](https://github.com/abhinavxd/libredesk)，默认分支 `main` |
 | 首次定制前的上游基线 | `88ec89ab21a912ca402fbfd2fd4f984d95d88175` |
 | 当前两项定制的功能基线 | `a08ec969301b2b2dfbbc971ef88847283a168471` |
-| 最近合入的上游 main | `0c6fae8688338390f04d272e019d43ee7cbed0a7`（2026-11-13） |
-| 本次同步前 fork 主分支 | `2fc1999ccc63ac49619f8b7341b9d5ea6c8997df` |
+| 最近合入的上游 main | `2d0617d79932d45f2b1cc8c538d7efe8be73b448`（2026-11-14） |
+| 本次同步前 fork 主分支 | `9abe298557f49d47b7845ef06879a1a3b1514d35` |
 | 此基线已发布镜像 | `ghcr.io/ikun2020/libredesk:sha-a08ec96`，应用版本 `v2.9.2+git.a08ec969` |
 | 发布验证 | [Docker image 构建](https://github.com/ikun2020/libredesk/actions/runs/43418248215) |
 
@@ -216,3 +216,12 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 - 保留邮箱及余额、已用流量、总流量、到期时间、套餐同步和原 `site_id:用户ID` 联系人。新增每个面板登录范围的十分钟认证租期、独立退出能力、原子撤销与重放拦截；旧收件箱认证会话一次性迁移，不删除联系人/聊天。
 - WebSocket 收发检查撤销状态；后台恢复重新签发身份时保留同账号草稿，换号/退出忽略迟到响应。插件不采集网址/标题，通用访问记录过滤查询参数与片段，错误日志去除凭据。
 - 后续升级须保留安全握手和 `/chat/security`、`/chat/auth/revoke`、`/chat/auth/revoke-legacy` 协议及对应 Go/Vitest 回归。未更改触屏编辑器、关键词自动回复和桌面 Enter 发送行为。
+
+## 2026-11-14：用户 fork sync 与轻量资料接口发布
+
+- 用户在 GitHub 执行的合并为 `9c1c90f2736d846ccc3fa20bf96881b21d1fdc76`，父提交分别是本 fork 的轻量资料接口 `9abe298557f49d47b7845ef06879a1a3b1514d35` 与上游 `2d0617d79932d45f2b1cc8c538d7efe8be73b448`。随后 `495e01ec` 为 Go/前端 CI 增加手动触发入口，方便发布前验证。
+- 逐项核对上游 48 个文件改动：自动回复消息快照、iPhone 正常流视口补偿、桌面 Enter、首附件发送、签名会话撤销与轻量访客身份隔离均保留。共同 SQL 文件保留上游客服排序改进和轻量资料更新的 visitor 类型、启用状态、外部身份约束。
+- 轻量版接入说明见 [XBOARD_LITE.md](XBOARD_LITE.md)。只更新当前随机凭据所属访客的邮箱及允许的属性，不按邮箱合并身份；资料来自浏览器，仅供参考。签名版接口继续保留。
+- 合并后完整前端回归使用 [五分片 CI](https://github.com/ikun2020/libredesk/actions/runs/43565876276)，对应应用代码 `495e01ec`。首次 Go 数据库回归发现测试收件箱缺少 `from` 字段，授权逻辑执行前就扫描失败；本次仅补齐测试数据并提前检查其可读性，不改变应用逻辑，保留全部权限及持久化断言。
+- 最终发布在修正后的提交上手动运行 Go/PostgreSQL 工作流；待 Go 和上述五分片前端全部成功，再手动发布同一提交的 GHCR 镜像并核对 revision、容器版本和 latest。提交中的 `[skip ci]` 只控制自动推送任务，避免验证完成前自动更新 latest，不豁免手动测试。
+- 原有未提交的重定向修正保留在工作区，未混入本次发布。未创建临时分支；本地与 fork 继续仅保留 main。浏览器回归不代表新增的 iPhone 真机后台恢复验证。
