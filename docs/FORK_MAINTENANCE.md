@@ -228,3 +228,5 @@ pnpm exec cypress run --e2e --spec "cypress/e2e/ui/automationForm.cy.js,cypress/
 - 仅保留旧凭据兼容拒绝：旧 purpose/session_id 不能当普通登录签名，旧 secure_scope 记录不能当长期会话，已有 legacy_epoch 撤销标记继续生效。这些检查不提供安全版签发、续期或注销能力。
 - XBoard 只维护 `LibredeskSyncLite` 与 `/api/v1/support-sync-lite/loader.js`。保留邮箱和五项属性、访客身份隔离、iframe 源校验，以及轻量插件自带的颜色/图片校验、sandbox 和不采集网页地址行为。现有轻量版插件及页脚无需替换。
 - 移除工作区旧安全插件和过时补丁；更新安装说明，停止推荐切回安全版。历史联系人/会话、生产数据库和其他未提交工作不做清理。后续合并无需恢复已经移除的安全版接口。
+- 精简提交 `4440f3e762b1c1dd286a448e9e8e9e07cf3962b4` 已通过 [Go/PostgreSQL](https://github.com/ikun2020/libredesk/actions/runs/43568004184) 和 [前端 CI](https://github.com/ikun2020/libredesk/actions/runs/43568006388)（81个单测文件、1239项测试、五个浏览器分片）；本地真实Vue iframe与未修改Lite插件的27项联调通过，API/WS为本地模拟。旧安全版包移除后，Lite的19项loader、27项widget防护、35项PHP配置、117项Laravel只读路由检查均重新通过。
+- [镜像发布](https://github.com/ikun2020/libredesk/actions/runs/43568687934)：`ghcr.io/ikun2020/libredesk:sha-4440f3e`，版本 `v2.9.2+git.4440f3e7`，linux/amd64。固定标签与 `latest` 摘要一致：`sha256:91ab839ebc637dd1bf7adf5bb87e0c3d144d56eafdc6cf42ae1631029bcf2a13`；revision为上述精简提交。发布结果的纯文档提交不重新构建镜像。
