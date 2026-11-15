@@ -43,6 +43,39 @@ const setup = () => {
   return store
 }
 
+describe('conversation contact display name', () => {
+  it('shows a synced email on the existing conversation when the visitor has the default name', () => {
+    const store = setup()
+    const current = { type: 'visitor', first_name: 'Visitor', last_name: '', email: null }
+    store.conversation.data.contact = { ...current }
+    store.conversations.data[0].contact = { ...current }
+
+    expect(store.currentContactName).toBe('Visitor')
+    expect(store.getContactFullName('conversation-a')).toBe('Visitor')
+
+    const email = 'customer@example.com'
+    store.conversation.data.contact.email = email
+    store.conversations.data[0].contact.email = email
+    expect(store.currentContactName).toBe(email)
+    expect(store.getContactFullName('conversation-a')).toBe(email)
+    expect(store.conversation.data.contact.first_name).toBe('Visitor')
+  })
+
+  it.each([
+    ['visitor', 'Lin', '', 'Lin'],
+    ['visitor', 'Visitor', 'Lin', 'Visitor Lin'],
+    ['contact', 'Visitor', '', 'Visitor']
+  ])('preserves the name of a %s named %s %s', (type, first_name, last_name, expected) => {
+    const store = setup()
+    const contact = { type, first_name, last_name, email: 'customer@example.com' }
+    store.conversation.data.contact = { ...contact }
+    store.conversations.data[0].contact = { ...contact }
+
+    expect(store.currentContactName).toBe(expected)
+    expect(store.getContactFullName('conversation-a')).toBe(expected)
+  })
+})
+
 describe('conversation assignees', () => {
   const agent = { id: 2194, first_name: 'Agent', last_name: 'One', avatar_url: '/avatar.png', type: 'agent', availability_status: 'online' }
 

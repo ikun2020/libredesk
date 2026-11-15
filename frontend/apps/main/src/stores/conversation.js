@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { TYPING_RECEIVE_TIMEOUT } from '@shared-ui/composables/useTypingIndicator.js'
 import { deepMerge } from '@shared-ui/utils/object.js'
+import { getContactDisplayName } from '@main/utils/contact-display-name'
 import { computeRecipientsFromMessage } from '@main/utils/email-recipients'
 import { extractEmailAddress, resolveEmailSender, sendableAddresses } from '@main/utils/email-sender'
 import { useEmitter } from '@main/composables/useEmitter'
@@ -423,15 +424,12 @@ export const useConversationStore = defineStore('conversation', () => {
     row.unread_message_count = Math.min((row.unread_message_count || 0) + 1, 10)
   }
 
-  const currentContactName = computed(() => {
-    if (!conversation.data?.contact) return ''
-    return conversation.data?.contact.first_name + ' ' + conversation.data?.contact.last_name
-  })
+  const currentContactName = computed(() => getContactDisplayName(conversation.data?.contact))
 
   function getContactFullName (uuid) {
     if (conversations?.data) {
       const conv = conversations.data.find(conv => conv.uuid === uuid)
-      return conv ? `${conv.contact.first_name} ${conv.contact.last_name}` : ''
+      return getContactDisplayName(conv?.contact)
     }
   }
 

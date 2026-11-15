@@ -24,7 +24,7 @@
                   class="object-cover"
                 />
                 <AvatarFallback>
-                  {{ conversation.contact.first_name.substring(0, 2).toUpperCase() }}
+                  {{ contactFullName?.substring(0, 2).toUpperCase() }}
                 </AvatarFallback>
               </Avatar>
             </div>

@@ -5,7 +5,7 @@
         <Avatar class="size-14">
           <AvatarImage :src="conversation?.contact?.avatar_url || ''" />
           <AvatarFallback>
-            {{ conversation?.contact?.first_name?.toUpperCase().substring(0, 2) }}
+            {{ conversationStore.currentContactName.substring(0, 2).toUpperCase() }}
           </AvatarFallback>
         </Avatar>
         <StatusDot
@@ -37,12 +37,12 @@
         class="flex min-w-0 items-center gap-2 hover:underline cursor-pointer"
       >
         <span class="min-w-0 font-medium [overflow-wrap:anywhere]">
-          {{ conversation?.contact?.first_name + ' ' + conversation?.contact?.last_name }}
+          {{ conversationStore.currentContactName }}
         </span>
         <ExternalLink size="16" class="text-muted-foreground flex-shrink-0" />
       </router-link>
       <span v-else class="min-w-0 font-medium [overflow-wrap:anywhere]">
-        {{ conversation?.contact?.first_name + ' ' + conversation?.contact?.last_name }}
+        {{ conversationStore.currentContactName }}
       </span>
     </div>
     <div class="flex gap-2 items-center">

@@ -96,7 +96,7 @@
               <div class="space-y-1 overflow-hidden flex-1">
                 <div class="flex items-center gap-2">
                   <h4 class="ui-subheading truncate">
-                    {{ contact.first_name }} {{ contact.last_name }}
+                    {{ getContactDisplayName(contact) }}
                   </h4>
                   <Badge v-if="contact.type" variant="secondary" class="text-xs px-1.5 py-0">
                     {{
@@ -106,7 +106,10 @@
                     }}
                   </Badge>
                 </div>
-                <p class="text-xs text-muted-foreground truncate">
+                <p
+                  v-if="contact.email && contact.email !== getContactDisplayName(contact)"
+                  class="text-xs text-muted-foreground truncate"
+                >
                   {{ contact.email }}
                 </p>
                 <div
@@ -157,6 +160,7 @@ import { handleHTTPError } from '@shared-ui/utils/http.js'
 import PaginationBar from '@main/components/pagination/PaginationBar.vue'
 import CreateContactDialog from './CreateContactDialog.vue'
 import { useUserStore } from '@main/stores/user'
+import { getContactDisplayName } from '@main/utils/contact-display-name'
 import api from '@main/api'
 
 const contacts = ref([])

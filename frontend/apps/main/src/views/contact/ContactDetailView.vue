@@ -21,8 +21,8 @@
             />
 
             <div class="flex gap-2 justify-start items-center">
-              <h2 class="ui-display-heading">
-                {{ contact.first_name }} {{ contact.last_name }}
+              <h2 class="ui-display-heading min-w-0 [overflow-wrap:anywhere]">
+                {{ getContactDisplayName(contact) }}
               </h2>
               <Badge v-if="contact.type" variant="secondary">
                 {{
@@ -183,6 +183,7 @@ import {
 } from '@shared-ui/components/ui/dropdown-menu'
 import { useUserStore } from '@/stores/user'
 import { useContactStore } from '@/stores/contact'
+import { getContactDisplayName } from '@/utils/contact-display-name'
 import {
   ShieldOffIcon,
   ShieldCheckIcon,

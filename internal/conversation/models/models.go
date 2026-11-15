@@ -167,6 +167,7 @@ type ConversationListItem struct {
 
 // ConversationListContact represents contact info in conversation list views
 type ConversationListContact struct {
+	Type      string      `db:"type" json:"type"`
 	CreatedAt time.Time   `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time   `db:"updated_at" json:"updated_at"`
 	FirstName string      `db:"first_name" json:"first_name"`
