@@ -1819,6 +1819,7 @@
   "webhook.sentSuccessfully": "Webhook sent successfully",
   "widget.addCampaign": "Add proactive message",
   "widget.addHelpHomeApp": "Add help articles",
+  "widget.automaticReply": "Automatic reply",
   "widget.backToCampaigns": "Back to proactive messages",
   "widget.brandBot": "Brand bot",
   "widget.campaign.any": "Any time",
