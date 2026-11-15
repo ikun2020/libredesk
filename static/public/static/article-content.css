@@ -144,7 +144,8 @@ details.hc-details[open] > summary.hc-details-summary { margin-bottom: .35rem; }
 details.hc-details > .hc-details-content > :last-child { margin-bottom: 0; }
 
 .hc-embed-open {
-    display: flex; align-items: center; justify-content: center; gap: .4rem;
+    display: none;
+    align-items: center; justify-content: center; gap: .4rem;
     padding: 1rem; font-size: .8rem; color: var(--hc-muted);
     border-top: 1px solid var(--hc-border); text-decoration: none;
 }
