@@ -559,6 +559,7 @@
   "globals.messages.all": "全部",
   "globals.messages.apply": "应用",
   "globals.messages.areYouAbsolutelySure": "您确定吗？",
+  "globals.messages.articleCount": "{count} 篇文章",
   "globals.messages.attachFile": "附加文件",
   "globals.messages.back": "返回",
   "globals.messages.backOnDayAt": "于 {day} {time}",
@@ -619,6 +620,7 @@
   "globals.messages.noResultsFound": "未找到结果",
   "globals.messages.notAllowed": "不允许",
   "globals.messages.notFound": "未找到",
+  "globals.messages.openInHelpCenter": "打开帮助中心",
   "globals.messages.options": "选项",
   "globals.messages.pageNofTotal": "第 {page} 页，共 {total} 页",
   "globals.messages.pageNotFound": "页面未找到",
@@ -739,6 +741,7 @@
   "globals.terms.google": "Google",
   "globals.terms.gradient": "渐变",
   "globals.terms.great": "很好",
+  "globals.terms.help": "常见问题",
   "globals.terms.home": "主页",
   "globals.terms.homeScreen": "主屏幕",
   "globals.terms.homeScreenApp": "主屏幕应用 | 主屏幕应用",
@@ -1097,5 +1100,6 @@
   "widget.conversationClosed": "此会话已关闭",
   "widget.ipBlocked": "访问被拒绝",
   "widget.justNow": "刚刚",
-  "widget.prechatForm.startChat": "开始聊天"
+  "widget.prechatForm.startChat": "开始聊天",
+  "widget.searchArticles": "搜索"
 }

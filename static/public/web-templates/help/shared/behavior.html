@@ -172,47 +172,6 @@
             pre.appendChild(btn);
         });
     }
-
-    var box = document.getElementById('hc-helpful');
-    if (box) {
-        var key = 'hc-feedback:' + box.dataset.endpoint;
-        var done = function (pointer) {
-            box.querySelector('.hc-helpful-actions').hidden = true;
-            box.querySelector('.hc-helpful-q').hidden = true;
-            var thanks = box.querySelector('.hc-helpful-thanks');
-            thanks.hidden = false;
-            if (pointer) {
-                var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                thanks.animate([{ opacity: 0 }, { opacity: 1 }], {
-                    duration: reduced ? 100 : 160,
-                    easing: 'cubic-bezier(0.23, 1, 0.32, 1)'
-                });
-            }
-        };
-        try { if (localStorage.getItem(key)) done(); } catch (e) {}
-        box.querySelectorAll('button').forEach(function (b) {
-            b.addEventListener('click', function (e) {
-                var pointer = e.detail > 0;
-                var buttons = box.querySelectorAll('button');
-                var error = box.querySelector('.hc-helpful-error');
-                error.hidden = true;
-                buttons.forEach(function (button) { button.disabled = true; });
-                fetch(box.dataset.endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ helpful: b.dataset.helpful === 'true' })
-                }).then(function (res) {
-                    if (!res.ok) throw new Error('Feedback request failed');
-                    done(pointer);
-                    try { localStorage.setItem(key, b.dataset.helpful); } catch (e) {}
-                }).catch(function () {
-                    error.hidden = false;
-                }).finally(function () {
-                    buttons.forEach(function (button) { button.disabled = false; });
-                });
-            });
-        });
-    }
 })();
 </script>
 {{ end }}
