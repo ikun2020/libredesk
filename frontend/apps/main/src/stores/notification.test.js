@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import { useNotificationStore } from './notification'
 
 const { getNotificationStats, getNotifications } = vi.hoisted(() => ({
@@ -18,6 +19,40 @@ beforeEach(() => {
   vi.clearAllMocks()
   getNotificationStats.mockResolvedValue({ data: { data: { unread_count: 0, total_count: 0 } } })
   getNotifications.mockResolvedValue({ data: { data: [] } })
+})
+
+afterEach(() => vi.unstubAllGlobals())
+
+describe('app badge', () => {
+  it('sets the badge on a live unread notification and clears it when all are read', async () => {
+    const setAppBadge = vi.fn()
+    const clearAppBadge = vi.fn()
+    vi.stubGlobal('navigator', { setAppBadge, clearAppBadge })
+    const store = useNotificationStore()
+    store.addNotification(notification(1, 'conversation-a'))
+    await nextTick()
+
+    expect(setAppBadge).toHaveBeenCalledWith()
+    expect(clearAppBadge).not.toHaveBeenCalled()
+
+    await store.fetchStats()
+    await nextTick()
+
+    expect(clearAppBadge).toHaveBeenCalledOnce()
+  })
+
+  it('clears a background push badge only after confirming zero unread', async () => {
+    const clearAppBadge = vi.fn()
+    vi.stubGlobal('navigator', { clearAppBadge })
+    const store = useNotificationStore()
+    getNotificationStats.mockRejectedValueOnce(new Error('offline'))
+
+    await store.fetchStats()
+    expect(clearAppBadge).not.toHaveBeenCalled()
+
+    await store.fetchStats()
+    expect(clearAppBadge).toHaveBeenCalledOnce()
+  })
 })
 
 describe('conversation read refresh', () => {
