@@ -49,13 +49,14 @@ func handleGetMacrosCompact(r *fastglue.Request) error {
 	return r.SendEnvelope(macros)
 }
 
-// handleSearchMacros returns the top macros without message content visible to the requesting agent.
+// handleSearchMacros returns a compact list of macros visible to the requesting agent.
 func handleSearchMacros(r *fastglue.Request) error {
 	var (
-		app   = r.Context.(*App)
-		auser = r.RequestCtx.UserValue("user").(amodels.User)
-		query = string(r.RequestCtx.QueryArgs().Peek("q"))
-		view  = string(r.RequestCtx.QueryArgs().Peek("view"))
+		app         = r.Context.(*App)
+		auser       = r.RequestCtx.UserValue("user").(amodels.User)
+		query       = string(r.RequestCtx.QueryArgs().Peek("q"))
+		view        = string(r.RequestCtx.QueryArgs().Peek("view"))
+		messageOnly = r.RequestCtx.QueryArgs().GetBool("message_only")
 	)
 	switch view {
 	case "", models.VisibleWhenReplying, models.VisibleWhenStartingConversation, models.VisibleWhenAddingPrivateNote:
@@ -66,7 +67,7 @@ func handleSearchMacros(r *fastglue.Request) error {
 	if err != nil {
 		return sendErrorEnvelope(r, err)
 	}
-	macros, err := app.macro.SearchCompact(query, view, user.ID, user.Teams.IDs())
+	macros, err := app.macro.SearchCompact(query, view, user.ID, user.Teams.IDs(), messageOnly)
 	if err != nil {
 		return sendErrorEnvelope(r, err)
 	}

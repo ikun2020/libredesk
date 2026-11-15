@@ -8,25 +8,33 @@
       class="reply-box-header flex shrink-0 items-center justify-between"
       :class="{ 'mb-4': !isFullscreen, 'border-b border-border pb-4': isFullscreen }"
     >
-      <Tabs v-model="messageType" class="rounded-lg">
-        <TabsList>
-          <TabsTrigger
-            v-if="canSendReply"
-            value="reply"
-            class="max-md:py-2.5"
-          >
-            {{ $t('globals.terms.reply') }}
-          </TabsTrigger>
-          <TabsTrigger
-            v-if="canSendPrivateNote"
-            value="private_note"
-            class="max-md:py-2.5"
-          >
-            {{ $t('globals.terms.privateNote') }}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <div class="flex items-center">
+      <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Tabs v-model="messageType" class="rounded-lg">
+          <TabsList>
+            <TabsTrigger
+              v-if="canSendReply"
+              value="reply"
+              class="max-md:py-2.5"
+            >
+              {{ $t('globals.terms.reply') }}
+            </TabsTrigger>
+            <TabsTrigger
+              v-if="canSendPrivateNote"
+              value="private_note"
+              class="max-md:py-2.5"
+            >
+              {{ $t('globals.terms.privateNote') }}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <QuickReplyMenu
+          v-if="canSendReply && messageType === 'reply'"
+          :key="conversationStore.current?.uuid"
+          :disabled="isDraftLoading || isSending || isGenerating"
+          @insert="insertEditorContent"
+        />
+      </div>
+      <div class="flex shrink-0 items-center">
         <Button
           v-if="!isFullscreen"
           type="button"
@@ -222,7 +230,7 @@
       :handleSendAndSetStatus="handleSendAndSetStatus"
       :isGenerating="isGenerating"
       :showGenerateReply="messageType !== 'private_note'"
-      @emojiSelect="handleEmojiSelect"
+      @emojiSelect="insertEditorContent"
       @generateReply="$emit('generateReply')"
     />
   </div>
@@ -252,6 +260,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useEmitter } from '@main/composables/useEmitter'
 import ReplyBoxAttachmentPreview from '@/features/conversation/message/attachment/ReplyBoxAttachmentPreview.vue'
 import MacroActionsPreview from '@/features/conversation/MacroActionsPreview.vue'
+import QuickReplyMenu from '@/features/conversation/QuickReplyMenu.vue'
 import ReplyBoxMenuBar from '@/features/conversation/ReplyBoxMenuBar.vue'
 import { useI18n } from 'vue-i18n'
 import { validateEmail } from '@shared-ui/utils/string'
@@ -501,10 +510,10 @@ const handleOnFileDelete = (uuid) => {
   emit('fileDelete', uuid)
 }
 
-const handleEmojiSelect = (emoji) => {
+const insertEditorContent = (content) => {
   insertContent.value = undefined
-  // Force reactivity so the user can select the same emoji multiple times
-  nextTick(() => (insertContent.value = emoji))
+  // Allow the same emoji or reply to be inserted again.
+  nextTick(() => (insertContent.value = content))
 }
 
 // Watch and update macro view based on message type this filters our macros.

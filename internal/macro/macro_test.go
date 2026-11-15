@@ -2,6 +2,7 @@ package macro
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/abhinavxd/libredesk/internal/macro/models"
@@ -118,7 +119,7 @@ func TestSearchCompact(t *testing.T) {
 	mustCreate(t, mgr, "other team", "<p>x</p>", "team", nil, &otherTeamID, []string{"replying"})
 	noteOnly := mustCreate(t, mgr, "note only", "<p>x</p>", "all", nil, nil, []string{"adding_private_note"})
 
-	visible, err := mgr.SearchCompact("", "", agentID, []int{teamID})
+	visible, err := mgr.SearchCompact("", "", agentID, []int{teamID}, false)
 	if err != nil {
 		t.Fatalf("SearchCompact: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestSearchCompact(t *testing.T) {
 		}
 	}
 
-	replying, err := mgr.SearchCompact("", "replying", agentID, []int{teamID})
+	replying, err := mgr.SearchCompact("", "replying", agentID, []int{teamID}, false)
 	if err != nil {
 		t.Fatalf("SearchCompact with view: %v", err)
 	}
@@ -145,7 +146,7 @@ func TestSearchCompact(t *testing.T) {
 		t.Fatalf("got %d macros for the replying view, want 3", len(replying))
 	}
 
-	byName, err := mgr.SearchCompact("TEAM", "", agentID, []int{teamID})
+	byName, err := mgr.SearchCompact("TEAM", "", agentID, []int{teamID}, false)
 	if err != nil {
 		t.Fatalf("SearchCompact with query: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestSearchCompact(t *testing.T) {
 		t.Fatalf("case-insensitive name search returned %d macros, want just 'my team'", len(byName))
 	}
 
-	noTeams, err := mgr.SearchCompact("", "", agentID, []int{})
+	noTeams, err := mgr.SearchCompact("", "", agentID, []int{}, false)
 	if err != nil {
 		t.Fatalf("SearchCompact with no teams: %v", err)
 	}
@@ -162,6 +163,36 @@ func TestSearchCompact(t *testing.T) {
 			t.Error("team macro returned for an agent with no teams")
 		}
 	}
+
+	t.Run("message-only results include all eligible macros", func(t *testing.T) {
+		if _, err := mgr.Create("action only", "", nil, nil, "all", []string{"replying"}, json.RawMessage(`[{"type":"add_tags","value":["x"]}]`)); err != nil {
+			t.Fatalf("creating action-only macro: %v", err)
+		}
+		want := map[int]bool{everyone.ID: true, mine.ID: true, myTeam.ID: true}
+		for i := range 30 {
+			m := mustCreate(t, mgr, fmt.Sprintf("reply %d", i), "<p>x</p>", "all", nil, nil, []string{"replying"})
+			want[m.ID] = true
+		}
+
+		limited, err := mgr.SearchCompact("", "replying", agentID, []int{teamID}, false)
+		if err != nil || len(limited) != 30 {
+			t.Fatalf("default search returned %d macros, want 30, error: %v", len(limited), err)
+		}
+		actions, err := mgr.SearchCompact("action only", "replying", agentID, []int{teamID}, false)
+		if err != nil || len(actions) != 1 || actions[0].HasMessageContent {
+			t.Fatalf("default search returned %v, want an action-only macro, error: %v", actions, err)
+		}
+
+		messages, err := mgr.SearchCompact("", "replying", agentID, []int{teamID}, true)
+		if err != nil || len(messages) != len(want) {
+			t.Fatalf("message-only search returned %d macros, want %d, error: %v", len(messages), len(want), err)
+		}
+		for _, m := range messages {
+			if !want[m.ID] || !m.HasMessageContent {
+				t.Errorf("unexpected macro %q in message-only results", m.Name)
+			}
+		}
+	})
 }
 
 func mustCreate(t *testing.T, mgr *Manager, name, content, visibility string, userID, teamID *int, visibleWhen []string) models.Macro {
