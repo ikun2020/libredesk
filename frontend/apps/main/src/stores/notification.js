@@ -15,6 +15,7 @@ export const useNotificationStore = defineStore('notification', () => {
   const emitter = useEmitter()
   let statsRequest = 0
   let notificationsRequest = 0
+  let requestedEnd = 0
 
   const hasUnread = computed(() => unreadCount.value > 0)
   watch(hasUnread, (value) => updateAppBadge(value))
@@ -30,6 +31,7 @@ export const useNotificationStore = defineStore('notification', () => {
   // Fetch notifications with pagination
   const fetchNotifications = async (limit = 30, offset = 0, append = false) => {
     const request = ++notificationsRequest
+    requestedEnd = offset + limit
     isLoading.value = true
     try {
       const data = []
@@ -115,12 +117,19 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
-  const refreshConversationRead = (uuid) => {
-    fetchStats()
-    if (notifications.value.some(n => !n.is_read && n.conversation_uuid === uuid)) {
-      fetchNotifications(Math.max(30, notifications.value.length))
-    }
+  const refresh = (reloadList) => {
+    const stats = fetchStats()
+    if (!reloadList) return stats
+
+    const pendingEnd = isLoading.value ? requestedEnd : 0
+    return Promise.all([stats, fetchNotifications(Math.max(30, notifications.value.length, pendingEnd))])
   }
+
+  const refreshConversationRead = (uuid) =>
+    refresh(isLoading.value || notifications.value.some(n => !n.is_read && n.conversation_uuid === uuid))
+
+  // An alert can arrive after the conversation read, or already be included in a stats response.
+  const refreshNewNotification = () => refresh(notificationsRequest > 0)
 
   // Mark all notifications as read
   const markAllAsRead = async () => {
@@ -174,14 +183,6 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
-  // Add a new notification (from WebSocket)
-  const addNotification = (notification) => {
-    // Add to the beginning of the list
-    notifications.value.unshift(notification)
-    if (!notification.is_read) unreadCount.value += 1
-    totalCount.value += 1
-  }
-
   // Load more notifications (for infinite scroll / load more button)
   const loadMore = async () => {
     if (!hasMore.value || isLoading.value) return
@@ -200,11 +201,11 @@ export const useNotificationStore = defineStore('notification', () => {
     fetchStats,
     markAsRead,
     refreshConversationRead,
+    refreshNewNotification,
     markAssignmentAsReadForConversation,
     markAllAsRead,
     deleteNotification,
     deleteAll,
-    addNotification,
     loadMore
   }
 })

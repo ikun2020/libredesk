@@ -29,11 +29,13 @@ describe('app badge', () => {
     const clearAppBadge = vi.fn()
     vi.stubGlobal('navigator', { setAppBadge, clearAppBadge })
     const store = useNotificationStore()
-    store.addNotification(notification(1, 'conversation-a'))
+    getNotificationStats.mockResolvedValueOnce({ data: { data: { unread_count: 1, total_count: 1 } } })
+    await store.refreshNewNotification()
     await nextTick()
 
     expect(setAppBadge).toHaveBeenCalledWith()
     expect(clearAppBadge).not.toHaveBeenCalled()
+    expect(getNotifications).not.toHaveBeenCalled()
 
     await store.fetchStats()
     await nextTick()
@@ -56,6 +58,34 @@ describe('app badge', () => {
 })
 
 describe('conversation read refresh', () => {
+  it('keeps a late live alert read when the server has already recorded the read', async () => {
+    const store = useNotificationStore()
+    const readAlert = notification(1, 'conversation-a', true)
+    getNotifications.mockResolvedValue({ data: { data: [readAlert] } })
+    getNotificationStats.mockResolvedValue({ data: { data: { unread_count: 0, total_count: 1 } } })
+    await store.fetchNotifications()
+    await store.refreshNewNotification()
+
+    expect(store.notifications).toEqual([readAlert])
+    expect(store.unreadCount).toBe(0)
+    expect(store.totalCount).toBe(1)
+  })
+
+  it('replaces a pending first load when the conversation is read', async () => {
+    const store = useNotificationStore()
+    let finishOld
+    getNotifications.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const oldLoad = store.fetchNotifications()
+    const readAlert = notification(1, 'conversation-a', true)
+    getNotifications.mockResolvedValueOnce({ data: { data: [readAlert] } })
+
+    await store.refreshConversationRead('conversation-a')
+    finishOld({ data: { data: [notification(1, 'conversation-a')] } })
+    await oldLoad
+
+    expect(store.notifications).toEqual([readAlert])
+  })
+
   it('marks only matching assignment alerts read and counts each alert once', () => {
     const store = useNotificationStore()
     store.notifications = [
@@ -121,6 +151,24 @@ describe('conversation read refresh', () => {
     expect(getNotifications).toHaveBeenLastCalledWith({ limit: 30, offset: loadedCount })
     expect(store.notifications).toEqual(refreshed)
     expect(store.hasMore).toBe(false)
+  })
+
+  it('includes the page being loaded when a read triggers a refresh', async () => {
+    const store = useNotificationStore()
+    const alerts = Array.from({ length: 60 }, (_, index) => notification(index + 1, 'conversation-a', true))
+    getNotifications.mockResolvedValueOnce({ data: { data: alerts.slice(0, 30) } })
+    await store.fetchNotifications()
+    let finishPage
+    getNotifications.mockImplementationOnce(() => new Promise(resolve => { finishPage = resolve }))
+    const nextPage = store.loadMore()
+    getNotifications.mockResolvedValueOnce({ data: { data: alerts } })
+
+    await store.refreshConversationRead('conversation-a')
+    finishPage({ data: { data: alerts.slice(30) } })
+    await nextPage
+
+    expect(getNotifications).toHaveBeenLastCalledWith({ limit: 60, offset: 0 })
+    expect(store.notifications).toEqual(alerts)
   })
 
   it('stops loading when the refreshed range ends before the requested count', async () => {

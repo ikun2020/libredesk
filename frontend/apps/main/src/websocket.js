@@ -140,7 +140,7 @@ export class WebSocketClient {
         },
         // New notification.
         [WS_EVENT.NEW_NOTIFICATION]: () => {
-          this.notificationStore.addNotification(data.data)
+          this.notificationStore.refreshNewNotification()
           // Mentions and assignments arrive as notifications without a conversation_update.
           this.convStore.refreshSidebarCounts()
         },

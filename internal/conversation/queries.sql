@@ -639,16 +639,25 @@ SET priority_id = (SELECT id FROM conversation_priorities WHERE name = $2),
 WHERE uuid = $1;
 
 -- name: upsert-user-last-seen
-INSERT INTO conversation_last_seen (user_id, conversation_id, last_seen_at, updated_at)
-SELECT $1, c.id, COALESCE(m.created_at, NOW()), clock_timestamp()
-FROM conversations c
-LEFT JOIN conversation_messages m ON m.conversation_id = c.id AND m.uuid = NULLIF($3::text, '')::uuid
-WHERE c.uuid = $2 AND ($3::text = '' OR m.id IS NOT NULL)
-ON CONFLICT (conversation_id, user_id)
-DO UPDATE SET
-    last_seen_at = GREATEST(conversation_last_seen.last_seen_at, EXCLUDED.last_seen_at),
-    updated_at = GREATEST(conversation_last_seen.updated_at + INTERVAL '1 microsecond', clock_timestamp())
-RETURNING last_seen_at, (EXTRACT(EPOCH FROM updated_at) * 1000000)::bigint AS read_version;
+WITH read_state AS (
+    INSERT INTO conversation_last_seen (user_id, conversation_id, last_seen_at, updated_at)
+    SELECT $1, c.id, COALESCE(m.created_at, NOW()), clock_timestamp()
+    FROM conversations c
+    LEFT JOIN conversation_messages m ON m.conversation_id = c.id AND m.uuid = NULLIF($3::text, '')::uuid
+    WHERE c.uuid = $2 AND ($3::text = '' OR m.id IS NOT NULL)
+    ON CONFLICT (conversation_id, user_id)
+    DO UPDATE SET
+        last_seen_at = GREATEST(conversation_last_seen.last_seen_at, EXCLUDED.last_seen_at),
+        updated_at = GREATEST(conversation_last_seen.updated_at + INTERVAL '1 microsecond', clock_timestamp())
+    RETURNING user_id, conversation_id, last_seen_at, updated_at
+), read_assignments AS (
+    UPDATE user_notifications n SET is_read = true, updated_at = NOW()
+    FROM read_state s
+    WHERE n.user_id = s.user_id AND n.conversation_id = s.conversation_id
+      AND n.notification_type = 'assignment' AND NOT n.is_read
+)
+SELECT last_seen_at, (EXTRACT(EPOCH FROM updated_at) * 1000000)::bigint AS read_version
+FROM read_state;
 
 -- name: update-conversation-last-message
 -- $1=id, $2=uuid, $3=content, $4=sender_type, $5=timestamp, $6=message_type, $7=private, $8=sender_id

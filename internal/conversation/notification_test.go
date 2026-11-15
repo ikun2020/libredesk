@@ -504,7 +504,7 @@ func TestReplyNotificationsAlertForEveryMessage(t *testing.T) {
 	})
 }
 
-func TestMarkAsUnreadKeepsReplyNotificationsRead(t *testing.T) {
+func TestConversationReadUpdatesNotifications(t *testing.T) {
 	db := testutil.NewDB(t, "reply_mark_unread")
 	var userID, inboxID int
 	if err := db.Get(&userID, `INSERT INTO users (type, email, first_name, last_name) VALUES ('agent', 'unread@example.com', 'Agent', '') RETURNING id`); err != nil {
@@ -515,6 +515,10 @@ func TestMarkAsUnreadKeepsReplyNotificationsRead(t *testing.T) {
 	}
 	var conv models.Conversation
 	if err := db.Get(&conv, `INSERT INTO conversations (contact_id, inbox_id, status_id) VALUES ($1, $2, (SELECT id FROM conversation_statuses LIMIT 1)) RETURNING id, uuid`, userID, inboxID); err != nil {
+		t.Fatal(err)
+	}
+	var otherConversationID int
+	if err := db.Get(&otherConversationID, `INSERT INTO conversations (contact_id, inbox_id, status_id) VALUES ($1, $2, (SELECT id FROM conversation_statuses LIMIT 1)) RETURNING id`, userID, inboxID); err != nil {
 		t.Fatal(err)
 	}
 	type message struct {
@@ -550,6 +554,11 @@ func TestMarkAsUnreadKeepsReplyNotificationsRead(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for _, conversationID := range []int{conv.ID, otherConversationID} {
+		if _, err := inApp.Create(userID, nmodels.NotificationTypeAssignment, "Assigned", null.String{}, null.IntFrom(conversationID), null.Int{}, null.Int{}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
 	unread := func(want int) {
 		t.Helper()
 		stats, err := inApp.GetStats(userID)
@@ -558,12 +567,29 @@ func TestMarkAsUnreadKeepsReplyNotificationsRead(t *testing.T) {
 		}
 	}
 
+	if _, err := m.UpdateUserLastSeen(conv.UUID, userID, "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Fatal("missing message accepted")
+	}
+	unread(4)
+	if _, err := m.UpdateUserLastSeen(conv.UUID, userID, messages[0].UUID); err != nil {
+		t.Fatal(err)
+	}
 	unread(2)
+	notifications, err := inApp.GetAll(userID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range notifications {
+		want := n.ConversationID.Int == conv.ID && (n.NotificationType == nmodels.NotificationTypeAssignment || n.MessageID.Int == messages[0].ID)
+		if n.IsRead != want {
+			t.Fatalf("notification %d read=%v, want %v", n.ID, n.IsRead, want)
+		}
+	}
 	latest, err := m.UpdateUserLastSeen(conv.UUID, userID, messages[1].UUID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unread(0)
+	unread(1)
 	older, err := m.UpdateUserLastSeen(conv.UUID, userID, messages[0].UUID)
 	if err != nil || !older.LastSeenAt.Equal(latest.LastSeenAt) || older.ReadVersion <= latest.ReadVersion {
 		t.Fatalf("older message moved last seen back: %v err=%v", older, err)
@@ -578,7 +604,7 @@ func TestMarkAsUnreadKeepsReplyNotificationsRead(t *testing.T) {
 	if !markedUnread.LastSeenAt.Before(latest.LastSeenAt) || markedUnread.ReadVersion <= older.ReadVersion {
 		t.Fatalf("mark unread did not return a newer state: %+v", markedUnread)
 	}
-	unread(0)
+	unread(1)
 	if now, err := m.UpdateUserLastSeen(conv.UUID, userID, "" /** messageUUID **/); err != nil || !now.LastSeenAt.After(latest.LastSeenAt) || now.ReadVersion <= markedUnread.ReadVersion {
 		t.Fatalf("empty message uuid did not mark read up to now: %v err=%v", now, err)
 	}
