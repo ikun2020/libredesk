@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout>
+  <AuthLayout :show-powered-by="false">
     <Card
       class="bg-card box"
       :class="{ 'animate-shake': shakeCard }"

@@ -6,7 +6,7 @@
           <slot />
         </div>
       </main>
-      <footer class="flex justify-center px-4 pb-6">
+      <footer v-if="showPoweredBy" class="flex justify-center px-4 pb-6">
         <PoweredBy />
       </footer>
     </div>
@@ -15,6 +15,10 @@
 
 <script setup>
 import PoweredBy from '@shared-ui/components/PoweredBy.vue'
+
+defineProps({
+  showPoweredBy: { type: Boolean, default: true }
+})
 </script>
 
 <style scoped>
