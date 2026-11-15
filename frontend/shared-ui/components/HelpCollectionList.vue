@@ -13,30 +13,23 @@ defineEmits(['collection', 'article'])
 
 <template>
   <div>
-    <div v-if="!searching" class="px-4 py-5 space-y-2">
-      <template v-if="collection">
-        <h3 class="text-lg font-semibold break-words">{{ collection.name }}</h3>
-        <p
-          v-if="collection.description"
-          class="text-sm text-muted-foreground whitespace-pre-line break-words"
-        >
-          {{ collection.description }}
-        </p>
-        <p class="text-xs text-muted-foreground">
-          {{
-            $t(
-              'globals.messages.articleCount',
-              { count: collection.article_count },
-              collection.article_count
-            )
-          }}
-        </p>
-      </template>
-      <h3 v-else class="text-sm font-medium">
+    <div v-if="!searching && collection" class="px-4 py-5 space-y-2">
+      <h3 class="text-lg font-semibold break-words">{{ collection.name }}</h3>
+      <p
+        v-if="collection.description"
+        class="text-sm text-muted-foreground whitespace-pre-line break-words"
+      >
+        {{ collection.description }}
+      </p>
+      <p class="text-xs text-muted-foreground">
         {{
-          $t('globals.messages.collectionCount', { count: collections.length }, collections.length)
+          $t(
+            'globals.messages.articleCount',
+            { count: collection.article_count },
+            collection.article_count
+          )
         }}
-      </h3>
+      </p>
     </div>
     <ul class="px-2 divide-y divide-border">
       <li v-for="item in articles" :key="`article-${item.id}`">
