@@ -5,12 +5,13 @@ describe('createLogout', () => {
   it('clears the push association before logging out', async () => {
     const pushNotifications = { disable: vi.fn().mockResolvedValue() }
     const apiClient = { logout: vi.fn().mockResolvedValue() }
-    const browser = { location: { href: '' } }
+    const browser = { location: { href: '' }, navigator: { clearAppBadge: vi.fn() } }
 
     await createLogout(pushNotifications, browser, apiClient)()
 
     expect(pushNotifications.disable).toHaveBeenCalled()
     expect(apiClient.logout).toHaveBeenCalled()
+    expect(browser.navigator.clearAppBadge).toHaveBeenCalledOnce()
     expect(browser.location.href).toBe('/')
   })
 
@@ -54,12 +55,14 @@ describe('createLogout', () => {
     const apiClient = { logout: vi.fn().mockRejectedValue(error) }
     const browser = {
       location: { href: '/inboxes/assigned' },
-      localStorage: { removeItem: vi.fn() }
+      localStorage: { removeItem: vi.fn() },
+      navigator: { clearAppBadge: vi.fn() }
     }
 
     await expect(createLogout(pushNotifications, browser, apiClient)()).rejects.toBe(error)
 
     expect(browser.location.href).toBe('/inboxes/assigned')
     expect(browser.localStorage.removeItem).not.toHaveBeenCalled()
+    expect(browser.navigator.clearAppBadge).not.toHaveBeenCalled()
   })
 })

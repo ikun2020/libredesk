@@ -3,6 +3,7 @@ import { useEmitter } from '@main/composables/useEmitter'
 import { usePushNotifications } from '@main/composables/usePushNotifications'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { clearNewConversationDrafts } from '@main/features/conversation/useNewConversationDraft.js'
+import { updateAppBadge } from '@main/utils/appBadge'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
 
 const defaultBrowser = typeof window === 'undefined' ? {} : window
@@ -14,6 +15,7 @@ export const createLogout = (pushNotifications, browser = defaultBrowser, apiCli
   } catch (error) {
     if (error?.response?.status !== 401) throw error
   }
+  await updateAppBadge(false, browser.navigator)
   clearNewConversationDrafts(browser.localStorage)
   browser.location.href = '/'
 }

@@ -15,13 +15,15 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   const notification = readPayload(event)
   if (!notification?.title) return
-  event.waitUntil(self.registration.showNotification(notification.title, {
+  const showNotification = self.registration.showNotification(notification.title, {
     body: notification.body,
     tag: notification.tag,
     icon: '/images/pwa-icon-192.png',
     badge: '/images/pwa-icon-192.png',
     data: { url: notification.url }
-  }))
+  })
+  const showAppBadge = Promise.resolve().then(() => self.navigator?.setAppBadge?.()).catch(() => {})
+  event.waitUntil(Promise.all([showNotification, showAppBadge]))
 })
 
 self.addEventListener('notificationclick', (event) => {

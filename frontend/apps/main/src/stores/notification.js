@@ -1,8 +1,9 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { useEmitter } from '@main/composables/useEmitter'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents'
+import { updateAppBadge } from '@main/utils/appBadge'
 import api from '@main/api'
 
 export const useNotificationStore = defineStore('notification', () => {
@@ -14,6 +15,9 @@ export const useNotificationStore = defineStore('notification', () => {
   const emitter = useEmitter()
   let statsRequest = 0
   let notificationsRequest = 0
+
+  const hasUnread = computed(() => unreadCount.value > 0)
+  watch(hasUnread, (value) => updateAppBadge(value))
 
   const unreadNotifications = computed(() =>
     notifications.value.filter(n => !n.is_read)
@@ -63,7 +67,10 @@ export const useNotificationStore = defineStore('notification', () => {
       const response = await api.getNotificationStats()
       const stats = response?.data?.data
       if (stats && request === statsRequest) {
-        unreadCount.value = stats.unread_count || 0
+        const count = stats.unread_count || 0
+        // The service worker can set a badge even if the local count is already zero.
+        if ((count > 0) === hasUnread.value) updateAppBadge(hasUnread.value)
+        unreadCount.value = count
         totalCount.value = stats.total_count || 0
       }
     } catch {

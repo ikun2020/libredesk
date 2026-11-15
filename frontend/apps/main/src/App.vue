@@ -86,7 +86,7 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import { useStorage } from '@vueuse/core'
+import { useEventListener, useStorage } from '@vueuse/core'
 import { RouterView } from 'vue-router'
 import { useUserStore } from './stores/user'
 import { initWS } from './websocket.js'
@@ -194,6 +194,10 @@ const pushNotifications = usePushNotifications()
 watch([() => notificationStore.unreadCount, () => route.fullPath], ([count]) => {
   const base = document.title.replace(/^\(\d+\)\s*/, '')
   document.title = count > 0 ? `(${count}) ${base}` : base
+})
+
+useEventListener(document, 'visibilitychange', () => {
+  if (!document.hidden && navigator.setAppBadge) notificationStore.fetchStats()
 })
 
 initWS()
