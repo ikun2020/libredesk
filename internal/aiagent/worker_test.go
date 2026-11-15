@@ -77,6 +77,62 @@ func TestLocalizeConfirmation(t *testing.T) {
 	}
 }
 
+func TestConfirmationAccepted(t *testing.T) {
+	const assistantUserID = 7
+	previous := cmodels.Message{
+		Type:        cmodels.MessageOutgoing,
+		SenderID:    assistantUserID,
+		TextContent: "您的问题已经解决了吗？",
+		Meta:        json.RawMessage(`{"is_confirmation":true}`),
+	}
+	reply := cmodels.Message{Type: cmodels.MessageIncoming, SenderType: cmodels.SenderTypeContact}
+	for _, text := range []string{"是", "已解决", " Yes, thanks "} {
+		reply.TextContent = text
+		if !confirmationAccepted([]cmodels.Message{previous, reply}, assistantUserID) {
+			t.Errorf("affirmative reply %q was missed", text)
+		}
+	}
+	for _, text := range []string{"还需要帮助", "是，但是还有一个问题"} {
+		reply.TextContent = text
+		if confirmationAccepted([]cmodels.Message{previous, reply}, assistantUserID) {
+			t.Errorf("follow-up %q was treated as confirmation", text)
+		}
+	}
+	reply.TextContent = "是"
+	if confirmationAccepted([]cmodels.Message{reply, previous}, assistantUserID) ||
+		confirmationAccepted([]cmodels.Message{previous, reply}, assistantUserID+1) ||
+		confirmationAccepted([]cmodels.Message{reply}, assistantUserID) {
+		t.Error("resolved without a preceding confirmation from the active assistant")
+	}
+	previous.TextContent = "您还需要帮助吗？"
+	if confirmationAccepted([]cmodels.Message{previous, reply}, assistantUserID) {
+		t.Error("resolved after the customer said yes to needing more help")
+	}
+	previous.TextContent = "您的问题已经解决了吗？"
+	previous.Meta = json.RawMessage(`{"suggested_replies":["是","否"]}`)
+	if confirmationAccepted([]cmodels.Message{previous, reply}, assistantUserID) {
+		t.Error("resolved an unrelated yes/no question")
+	}
+}
+
+func TestFormatHandoffReply(t *testing.T) {
+	const status = "[Conversation has been handed off to a human agent.]"
+	const notice = "I'll connect you with a human agent."
+	if got := formatHandoffReply(status, "请转人工", true, notice); got != "正在为您转接人工客服。" {
+		t.Errorf("unexpected Chinese notice: %q", got)
+	}
+	if got := formatHandoffReply(status, "Can I speak to a person?", true, notice); got != notice {
+		t.Errorf("unexpected English notice: %q", got)
+	}
+	if got := formatHandoffReply(status, "请转人工", false, notice); got != "" {
+		t.Errorf("showed a handoff without a request: %q", got)
+	}
+	const advice = "您可以在订单页面申请帮助。"
+	if got := formatHandoffReply(advice, "请转人工", true, notice); got != advice {
+		t.Errorf("rewrote an ordinary reply: %q", got)
+	}
+}
+
 func TestSplitArticleSources(t *testing.T) {
 	hits := []aimodels.SearchResult{
 		{SourceID: 12, SourceType: aimodels.SourceHelpArticle},

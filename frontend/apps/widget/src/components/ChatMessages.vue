@@ -270,7 +270,8 @@ const pendingHandoffMessageUUID = computed(() => {
 })
 
 const getMessageTime = (timestamp) => {
-  return useRelativeTime(new Date(timestamp)).value
+  const relativeTime = useRelativeTime(new Date(timestamp)).value
+  return relativeTime === 'now' ? t('widget.justNow') : relativeTime
 }
 
 const isQuotedTextVisible = (messageUuid) => {

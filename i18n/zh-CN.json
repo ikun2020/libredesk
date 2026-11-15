@@ -399,6 +399,10 @@
   "agent.generateApiKey": "生成 API 密钥",
   "agent.new": "新建客服",
   "agent.selectAvailabilityStatus": "选择可用性状态",
+  "ai.agent.handoffFormPrompt": "转接人工客服前，请先填写这些信息。",
+  "ai.agent.handoffFormUnavailable": "这次转接已结束。如果您仍需要人工协助，请发送一条新消息。",
+  "ai.agent.handoffNotice": "正在为您转接人工客服。",
+  "ai.agent.needMoreHelp": "还需要帮助",
   "auth.backToLogin": "返回登录",
   "auth.checkEmailForReset": "查看您的电子邮件中的密码重置链接。",
   "auth.confirmPassword": "确认密码",
@@ -1088,5 +1092,6 @@
   "webhook.sentSuccessfully": "Webhook 发送成功",
   "widget.conversationClosed": "此会话已关闭",
   "widget.ipBlocked": "访问被拒绝",
+  "widget.justNow": "刚刚",
   "widget.prechatForm.startChat": "开始聊天"
 }

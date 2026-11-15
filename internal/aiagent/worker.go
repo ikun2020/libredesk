@@ -233,6 +233,7 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	if inbound == nil {
 		return
 	}
+	acceptedConfirmation := conv.InboxChannel == inbox.ChannelLiveChat && confirmationAccepted(msgs, assistant.UserID)
 	m.mu.Lock()
 	prevSeen, hasPrev := m.lastSeen[convID]
 	m.lastSeen[convID] = msgs[len(msgs)-1].ID
@@ -252,6 +253,17 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	if inbound.SenderID != conv.ContactID {
 		m.handoff(conv, assistant, m.i18n.T("ai.agent.handoffOtherParticipant"))
 		return
+	}
+	if acceptedConfirmation {
+		fresh, err := m.convo.GetConversation(convID, "", "")
+		if err == nil {
+			if fresh.AssignedUserID.Valid && int(fresh.AssignedUserID.Int) == assistant.UserID &&
+				!nonActionableCategories[fresh.StatusCategory.String] && !fresh.LastInteractionAt.Time.After(inbound.CreatedAt) {
+				m.resolve(fresh, assistant)
+			}
+			return
+		}
+		m.lo.Error("error checking conversation before applying confirmation", "conversation_uuid", conv.UUID, "error", err)
 	}
 	// Turn cap is per engagement (since the assistant was last assigned), so a human reassigning a
 	// capped conversation to the assistant gives it a fresh budget instead of bouncing straight back.
@@ -362,7 +374,12 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	answer, confirm := splitConfirmation(strings.TrimSpace(answer))
 	answer, answerSuggestions := splitSuggestions(answer)
 	confirm, confirmSuggestions := splitSuggestions(confirm)
-	confirm, confirmSuggestions = localizeConfirmation(answer, confirm, confirmSuggestions)
+	answer = formatHandoffReply(answer, inbound.TextContent, outcome.handedOff, m.i18n.T("ai.agent.handoffNotice"))
+	if outcome.resolved || outcome.handedOff {
+		confirm, answerSuggestions, confirmSuggestions = "", nil, nil
+	} else {
+		confirm, confirmSuggestions = localizeConfirmation(answer, confirm, confirmSuggestions)
+	}
 	// Email gets one message; separate chat-style bubbles only suit the widget.
 	if conv.InboxChannel == channelEmail && confirm != "" {
 		answer, confirm = answer+"\n\n"+confirm, ""
@@ -642,6 +659,31 @@ func lastIsInboundContact(msgs []cmodels.Message) bool {
 	return last.Type == cmodels.MessageIncoming && last.SenderType == cmodels.SenderTypeContact
 }
 
+// Only a reply immediately after a server-marked confirmation can resolve without calling the model.
+func confirmationAccepted(msgs []cmodels.Message, assistantUserID int) bool {
+	if len(msgs) < 2 || !lastIsInboundContact(msgs) {
+		return false
+	}
+	previous, reply := msgs[len(msgs)-2], msgs[len(msgs)-1]
+	if previous.Type != cmodels.MessageOutgoing || previous.SenderID != assistantUserID ||
+		!messageMetaBool(previous.Meta, "is_confirmation") || len(reply.Attachments) > 0 {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(reply.TextContent)) {
+	case "已解决", "解决了":
+		return true
+	case "是", "是的", "yes", "yes, thanks", "yes, thank you":
+		// A bare yes is ambiguous unless the preceding question asks whether the issue is resolved.
+		question := strings.TrimRight(strings.ToLower(strings.TrimSpace(previous.TextContent)), "?？")
+		switch question {
+		case "您的问题已经解决了吗", "您的问题解决了吗", "这解决了您的问题吗",
+			"did that answer your question", "did that resolve your question":
+			return true
+		}
+	}
+	return false
+}
+
 func latestInboundContact(msgs []cmodels.Message) *cmodels.Message {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Type == cmodels.MessageIncoming && msgs[i].SenderType == cmodels.SenderTypeContact {
@@ -879,19 +921,7 @@ func localizeConfirmation(answer, confirmation string, suggestions []string) (st
 	if answer == "" {
 		return "", nil
 	}
-	if confirmation == "" {
-		return confirmation, suggestions
-	}
-	var firstLetter rune
-	for _, r := range answer {
-		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
-			return confirmation, suggestions
-		}
-		if firstLetter == 0 && unicode.IsLetter(r) {
-			firstLetter = r
-		}
-	}
-	if !unicode.Is(unicode.Han, firstLetter) {
+	if confirmation == "" || !startsWithChinese(answer) {
 		return confirmation, suggestions
 	}
 	containsHan := func(text string) bool {
@@ -904,6 +934,39 @@ func localizeConfirmation(answer, confirmation string, suggestions []string) (st
 		suggestions = []string{"已解决", "还需要帮助"}
 	}
 	return confirmation, suggestions
+}
+
+func startsWithChinese(text string) bool {
+	var firstLetter rune
+	for _, r := range text {
+		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			return false
+		}
+		if firstLetter == 0 && unicode.IsLetter(r) {
+			firstLetter = r
+		}
+	}
+	return unicode.Is(unicode.Han, firstLetter)
+}
+
+// Replace standalone tool-status echoes only after the assistant actually requested a handoff.
+func formatHandoffReply(answer, customerMessage string, handedOff bool, notice string) string {
+	status := strings.ToLower(strings.TrimSpace(strings.Trim(answer, "[]")))
+	switch status {
+	case "conversation has been handed off to a human agent.",
+		"the conversation has been handed off to a human agent.",
+		"the conversation has been handed off to a human. do not take further action.",
+		"handoff requested.", "handoff requested. the application will handle the transfer.":
+		if !handedOff {
+			return ""
+		}
+		if startsWithChinese(customerMessage) {
+			return "正在为您转接人工客服。"
+		}
+		return notice
+	default:
+		return answer
+	}
 }
 
 func suggestedRepliesMeta(suggestions []string) map[string]any {

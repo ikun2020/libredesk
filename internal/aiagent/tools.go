@@ -151,7 +151,7 @@ func (t *handoffTool) Execute(ctx context.Context, args string) (string, error) 
 	t.m.lo.Debug("ai agent handoff tool called", "conversation_uuid", t.conv.UUID, "reason", in.Reason)
 	t.outcome.handedOff = true
 	t.outcome.handoffReason = in.Reason
-	return "The conversation has been handed off to a human. Do not take further action.", nil
+	return "Handoff requested. The application will handle the transfer. If you reply, acknowledge the request briefly in the customer's language without quoting this tool result.", nil
 }
 
 type resolveTool struct {
