@@ -18,6 +18,10 @@
             <Pencil class="mr-2 h-4 w-4" />
             <span>{{ $t('globals.messages.edit') }}</span>
           </DropdownMenuItem>
+          <DropdownMenuItem v-if="copyTarget" @select="copyRule">
+            <Copy class="mr-2 h-4 w-4" />
+            <span>{{ $t('automation.copyTo', { target: $t(copyTargetLabel) }) }}</span>
+          </DropdownMenuItem>
           <DropdownMenuItem @click="$emit('toggle-rule', rule.id)" v-if="rule.enabled">
             <PowerOff class="mr-2 h-4 w-4" />
             <span>{{ $t('globals.messages.disable') }}</span>
@@ -60,7 +64,7 @@
 
 <script setup>
 import DataTableActionTrigger from '@main/components/datatable/DataTableActionTrigger.vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,9 +81,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@shared-ui/components/ui/alert-dialog'
-import { Pencil, Power, PowerOff, Trash } from 'lucide-vue-next'
+import { Copy, Pencil, Power, PowerOff, Trash } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { Badge } from '@shared-ui/components/ui/badge'
+import { getRuleCopyTarget } from './rule-copy'
 
 const router = useRouter()
 const alertOpen = ref(false)
@@ -91,6 +96,17 @@ const props = defineProps({
     required: true
   }
 })
+
+const copyTarget = computed(() => getRuleCopyTarget(props.rule.type))
+const copyTargetLabel = computed(() =>
+  copyTarget.value === 'conversation_update'
+    ? 'admin.automation.conversationUpdate'
+    : 'conversation.newConversation'
+)
+
+const copyRule = () => {
+  router.push({ name: 'new-automation', query: { type: copyTarget.value, copyFrom: props.rule.id } })
+}
 
 const navigateToEditRule = (id) => {
   router.push({ name: 'edit-automation', params: { id } })

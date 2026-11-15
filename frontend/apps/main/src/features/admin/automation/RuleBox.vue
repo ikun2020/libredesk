@@ -44,7 +44,15 @@
                 @update:modelValue="(value) => handleFieldChange(value, index)"
               >
                 <SelectTrigger :class="FIELD_CLASS">
-                  <SelectValue :placeholder="t('placeholders.selectField')" />
+                  <SelectValue
+                    v-if="
+                      rule.field_type !== fieldTypeConstants.contact_custom_attribute &&
+                      unavailableFields?.has(rule.field)
+                    "
+                  >
+                    <span class="text-destructive">{{ unavailableFields.get(rule.field) }}</span>
+                  </SelectValue>
+                  <SelectValue v-else :placeholder="t('placeholders.selectField')" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -234,6 +242,7 @@ import { operatorLabel } from '@/constants/filterConfig'
 
 const props = defineProps({
   contactsOnly: { type: Boolean, default: false },
+  unavailableFields: { type: Map, default: null },
   ruleGroup: {
     type: Object,
     required: true
