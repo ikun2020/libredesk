@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/abhinavxd/libredesk/internal/ai"
 	aimodels "github.com/abhinavxd/libredesk/internal/ai/models"
@@ -361,6 +362,7 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	answer, confirm := splitConfirmation(strings.TrimSpace(answer))
 	answer, answerSuggestions := splitSuggestions(answer)
 	confirm, confirmSuggestions := splitSuggestions(confirm)
+	confirm, confirmSuggestions = localizeConfirmation(answer, confirm, confirmSuggestions)
 	// Email gets one message; separate chat-style bubbles only suit the widget.
 	if conv.InboxChannel == channelEmail && confirm != "" {
 		answer, confirm = answer+"\n\n"+confirm, ""
@@ -564,6 +566,9 @@ func (m *Manager) PreviewReply(ctx context.Context, assistantID int, message str
 	}
 	answer, articleIDs := splitArticleSources(answer, hits, a.CitationsEnabled)
 	main, confirm := splitConfirmation(strings.TrimSpace(answer))
+	main, _ = splitSuggestions(main)
+	confirm, _ = splitSuggestions(confirm)
+	confirm, _ = localizeConfirmation(main, confirm, nil)
 	if confirm != "" {
 		main += "\n\n" + confirm
 	}
@@ -840,9 +845,9 @@ func splitConfirmation(answer string) (string, string) {
 func splitSuggestions(answer string) (string, []string) {
 	idx := strings.LastIndex(answer, suggestionsMarker)
 	if idx == -1 {
-		return answer, nil
+		return visibleReplyText(answer), nil
 	}
-	body := strings.TrimSpace(strings.ReplaceAll(answer[:idx], suggestionsMarker, ""))
+	body := visibleReplyText(strings.ReplaceAll(answer[:idx], suggestionsMarker, ""))
 	var raw []string
 	if err := json.Unmarshal([]byte(strings.TrimSpace(answer[idx+len(suggestionsMarker):])), &raw); err != nil {
 		return body, nil
@@ -859,6 +864,46 @@ func splitSuggestions(answer string) (string, []string) {
 		}
 	}
 	return body, suggestions
+}
+
+func visibleReplyText(text string) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "{") && strings.HasSuffix(text, "}") && strings.TrimSpace(text[1:len(text)-1]) == "" {
+		return ""
+	}
+	return text
+}
+
+// Localize the standard resolution prompt from the answer's script, since the model can copy English options into a Chinese reply.
+func localizeConfirmation(answer, confirmation string, suggestions []string) (string, []string) {
+	if answer == "" {
+		return "", nil
+	}
+	if confirmation == "" {
+		return confirmation, suggestions
+	}
+	var firstLetter rune
+	for _, r := range answer {
+		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			return confirmation, suggestions
+		}
+		if firstLetter == 0 && unicode.IsLetter(r) {
+			firstLetter = r
+		}
+	}
+	if !unicode.Is(unicode.Han, firstLetter) {
+		return confirmation, suggestions
+	}
+	containsHan := func(text string) bool {
+		return strings.ContainsFunc(text, func(r rune) bool { return unicode.Is(unicode.Han, r) })
+	}
+	if !containsHan(confirmation) {
+		confirmation = "这解决了您的问题吗？"
+	}
+	if len(suggestions) == 0 || slices.ContainsFunc(suggestions, func(label string) bool { return !containsHan(label) }) {
+		suggestions = []string{"已解决", "还需要帮助"}
+	}
+	return confirmation, suggestions
 }
 
 func suggestedRepliesMeta(suggestions []string) map[string]any {

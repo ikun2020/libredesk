@@ -36,6 +36,47 @@ func TestSplitSuggestionsRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestSplitSuggestionsHidesEmptyJSONObject(t *testing.T) {
+	for _, answer := range []string{"{}", " {\n } ", "{}\n[[suggestions]] [\"Yes\",\"No\"]"} {
+		if body, _ := splitSuggestions(answer); body != "" {
+			t.Errorf("empty object leaked into the reply: %q", body)
+		}
+	}
+	const reply = "Return {} when there are no settings."
+	if body, _ := splitSuggestions(reply); body != reply {
+		t.Errorf("reply containing braces was changed: %q", body)
+	}
+}
+
+func TestLocalizeConfirmation(t *testing.T) {
+	const question = "Did that answer your question?"
+	choices := []string{"Yes", "No"}
+	confirm, suggestions := localizeConfirmation("您可以在官网下载客户端。", question, choices)
+	if confirm != "这解决了您的问题吗？" || !reflect.DeepEqual(suggestions, []string{"已解决", "还需要帮助"}) {
+		t.Fatalf("unexpected Chinese confirmation: %q, %v", confirm, suggestions)
+	}
+	for _, answer := range []string{"Download it from the website.", "Search for 客户端 in the app store.", "公式サイトからダウンロードできます。", "공식 사이트에서 客戶端을 다운로드하세요."} {
+		confirm, suggestions := localizeConfirmation(answer, question, choices)
+		if confirm != question || !reflect.DeepEqual(suggestions, choices) {
+			t.Errorf("confirmation for %q was changed: %q, %v", answer, confirm, suggestions)
+		}
+	}
+	if confirm, _ := localizeConfirmation("您好！", "", nil); confirm != "" {
+		t.Errorf("added an unrequested confirmation: %q", confirm)
+	}
+	const localizedQuestion = "下载成功了吗？"
+	localizedChoices := []string{"下载成功", "还没成功"}
+	confirm, suggestions = localizeConfirmation("您可以在官网下载客户端。", localizedQuestion, localizedChoices)
+	if confirm != localizedQuestion || !reflect.DeepEqual(suggestions, localizedChoices) {
+		t.Errorf("localized confirmation was changed: %q, %v", confirm, suggestions)
+	}
+	main, trailing := splitConfirmation("{}\n[[confirm]]\n" + question)
+	main, _ = splitSuggestions(main)
+	if confirm, _ := localizeConfirmation(main, trailing, choices); confirm != "" {
+		t.Errorf("sent a confirmation without a visible answer: %q", confirm)
+	}
+}
+
 func TestSplitArticleSources(t *testing.T) {
 	hits := []aimodels.SearchResult{
 		{SourceID: 12, SourceType: aimodels.SourceHelpArticle},
