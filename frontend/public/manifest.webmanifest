@@ -5,6 +5,9 @@
   "start_url": "/inboxes/assigned",
   "scope": "/",
   "display": "standalone",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
   "background_color": "hsl(0 0% 99.2%)",
   "theme_color": "hsl(152 39% 30%)",
   "icons": [

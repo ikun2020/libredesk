@@ -5,6 +5,7 @@ describe('PWA notification preferences', () => {
       expect(headers['content-type']).to.include('application/manifest+json')
       expect(body.name).to.eq('Support')
       expect(body.display).to.eq('standalone')
+      expect(body.launch_handler.client_mode).to.eq('navigate-existing')
       expect(body.icons.map((icon) => icon.sizes)).to.have.members(['192x192', '512x512'])
       for (const { src } of body.icons) {
         cy.request(src).its('headers.content-type').should('include', 'image/png')

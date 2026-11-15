@@ -33,10 +33,6 @@ self.addEventListener('notificationclick', (event) => {
   const target = new URL(url, self.location.origin)
   if (target.origin !== self.location.origin) return
 
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
-    const client = clients[0]
-    if (!client) return self.clients.openWindow(target.href)
-    await client.focus()
-    return client.navigate(target.href).catch(() => self.clients.openWindow(target.href))
-  }))
+  // Let the browser route the conversation to the installed app.
+  event.waitUntil(self.clients.openWindow(target.href))
 })
