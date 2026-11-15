@@ -4,7 +4,8 @@
   </div>
   <LoadingOverlay :loading="isLoading">
     <div class="space-y-4">
-      <form @submit="onSubmit">
+      <p v-if="copyError" role="alert" class="text-sm text-destructive">{{ copyError }}</p>
+      <form v-if="!isCopy || copyReady" @submit="onSubmit">
         <div class="space-y-6">
           <div class="space-y-6">
             <FormField
@@ -25,21 +26,21 @@
             </FormField>
 
             <FormGrid>
-              <FormField v-slot="{ field }" name="name">
+              <FormField v-slot="{ componentField }" name="name">
                 <FormItem>
                   <FormLabel>{{ $t('globals.terms.name') }}</FormLabel>
                   <FormControl>
-                    <Input type="text" placeholder="" v-bind="field" @keydown.enter.prevent />
+                    <Input type="text" placeholder="" v-bind="componentField" @keydown.enter.prevent />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               </FormField>
 
-              <FormField v-slot="{ field }" name="description">
+              <FormField v-slot="{ componentField }" name="description">
                 <FormItem>
                   <FormLabel>{{ $t('globals.terms.description') }}</FormLabel>
                   <FormControl>
-                    <Input type="text" placeholder="" v-bind="field" @keydown.enter.prevent />
+                    <Input type="text" placeholder="" v-bind="componentField" @keydown.enter.prevent />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -50,7 +51,7 @@
               <FormItem class="max-w-xl">
                 <FormLabel>{{ $t('globals.terms.type') }}</FormLabel>
                 <FormControl>
-                  <Select v-bind="componentField" @update:modelValue="handleInput">
+                  <Select v-bind="componentField" :disabled="isCopy" @update:modelValue="handleInput">
                     <SelectTrigger>
                       <SelectValue :placeholder="t('placeholders.selectType')" />
                     </SelectTrigger>
@@ -98,6 +99,9 @@
           <h4 class="ui-heading">
             {{ $t('admin.automation.matchTheseRules') }}
           </h4>
+          <p v-if="copyConditionWarning" role="alert" class="text-sm text-destructive">
+            {{ copyConditionWarning }}
+          </p>
 
           <RuleBox
             v-if="form.values.type"
@@ -106,6 +110,7 @@
             @add-condition="handleAddCondition"
             @remove-condition="handleRemoveCondition"
             :type="form.values.type"
+            :unavailable-fields="unavailableFields"
             :groupIndex="0"
           />
 
@@ -135,6 +140,7 @@
             @add-condition="handleAddCondition"
             @remove-condition="handleRemoveCondition"
             :type="form.values.type"
+            :unavailable-fields="unavailableFields"
             :groupIndex="1"
           />
           <h4 class="ui-heading mt-2">
@@ -147,7 +153,7 @@
             @add-action="handleAddAction"
             @remove-action="handleRemoveAction"
           />
-          <Button type="submit" :isLoading="isLoading">{{
+          <Button type="submit" :isLoading="isLoading" :disabled="!!copyConditionWarning">{{
             isNewForm ? $t('globals.messages.create') : $t('globals.messages.save')
           }}</Button>
         </div>
@@ -168,6 +174,12 @@ import { Checkbox } from '@shared-ui/components/ui/checkbox'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { createFormSchema } from '@main/features/admin/automation/formSchema.js'
+import {
+  createRuleCopy,
+  getRuleCopyTarget,
+  getUnavailableConditionFields
+} from '@main/features/admin/automation/rule-copy'
+import { useConversationFilters } from '@main/composables/useConversationFilters'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { useEmitter } from '@main/composables/useEmitter'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
@@ -253,6 +265,9 @@ const breadcrumbPageLabel = () => {
 const isNewForm = computed(() => {
   return props.id ? false : true
 })
+const isCopy = computed(() => isNewForm.value && route.query.copyFrom !== undefined)
+const copyError = ref('')
+const copyReady = ref(false)
 
 const breadcrumbLinks = [
   { path: 'automation-list', label: t('globals.terms.automation') },
@@ -326,12 +341,34 @@ const form = useForm({
   validationSchema: toTypedSchema(createFormSchema(t))
 })
 
+const { newConversationFilters, conversationUpdateFilters } = useConversationFilters()
+const filtersByType = {
+  new_conversation: newConversationFilters,
+  conversation_update: conversationUpdateFilters
+}
+const unavailableFields = computed(() => {
+  if (!isCopy.value || !copyReady.value) return null
+  const type = rule.value.type
+  const targetFilters = filtersByType[type].value
+  const sourceFilters = filtersByType[getRuleCopyTarget(type)].value
+  const unavailable = getUnavailableConditionFields(rule.value.rules?.[0]?.groups ?? [], targetFilters)
+  return new Map(unavailable.map((field) => [field, sourceFilters[field]?.label ?? field]))
+})
+const copyConditionWarning = computed(() =>
+  unavailableFields.value?.size
+    ? t('automation.copyUnsupportedConditions', {
+        fields: [...unavailableFields.value.values()].join(', ')
+      })
+    : ''
+)
+
 const onSubmit = form.handleSubmit(async (values) => {
-  handleSave(values)
+  await handleSave(values)
 })
 
 const handleSave = async (values) => {
-  const validationError = getRulesValidationError()
+  if (isLoading.value || (isCopy.value && !copyReady.value)) return
+  const validationError = copyConditionWarning.value || getRulesValidationError()
   if (validationError) {
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
       variant: 'warning',
@@ -350,7 +387,7 @@ const handleSave = async (values) => {
       await api.updateAutomationRule(props.id, updatedRule)
     } else {
       await api.createAutomationRule(updatedRule)
-      router.push({ name: 'automation-list' })
+      router.push({ name: 'automation-list', query: isCopy.value ? { type: values.type } : {} })
     }
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
       description: t('globals.messages.savedSuccessfully')
@@ -435,7 +472,32 @@ const getRulesValidationError = () => {
 }
 
 onMounted(async () => {
-  if (props.id > 0) {
+  if (isCopy.value) {
+    const { copyFrom, type } = route.query
+    if (typeof copyFrom !== 'string' || !/^[1-9]\d*$/.test(copyFrom) || !getRuleCopyTarget(type)) {
+      copyError.value = t('automation.copyUnavailable')
+      return
+    }
+
+    try {
+      isLoading.value = true
+      const resp = await api.getAutomationRule(copyFrom)
+      const copy = createRuleCopy(resp.data.data, type)
+      if (!copy) {
+        copyError.value = t('automation.copyUnavailable')
+        return
+      }
+      rule.value = copy
+      form.resetForm({
+        values: { name: copy.name, description: copy.description, type, events: [] }
+      })
+    } catch (error) {
+      copyError.value = handleHTTPError(error).message
+      return
+    } finally {
+      isLoading.value = false
+    }
+  } else if (props.id > 0) {
     try {
       isLoading.value = true
       let resp = await api.getAutomationRule(props.id)
@@ -453,11 +515,12 @@ onMounted(async () => {
       isLoading.value = false
     }
   }
-  if (route.query.type) {
+  if (!isCopy.value && route.query.type) {
     form.setFieldValue('type', route.query.type)
   }
   firstRuleGroup.value = getFirstGroup()
   secondRuleGroup.value = getSecondGroup()
   groupOperator.value = getGroupOperator()
+  if (isCopy.value) copyReady.value = true
 })
 </script>
