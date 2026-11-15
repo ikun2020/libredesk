@@ -127,7 +127,11 @@
               class="text-[10px] text-muted-foreground mt-1 flex items-center gap-2"
             >
               <span v-if="message.author.type === 'agent'">
-                {{ message.author.first_name }} {{ message.author.last_name }}
+                {{
+                  isSystemAutomaticReply(message)
+                    ? t('widget.automaticReply')
+                    : [message.author.first_name, message.author.last_name].filter(Boolean).join(' ')
+                }}
                 •
                 {{ getMessageTime(message.created_at) }}
               </span>
@@ -235,12 +239,20 @@ const { hasUserScrolled, scrollToBottom, scrollToOffset, handleScroll } = useSti
 const config = computed(() => widgetStore.config)
 const isTyping = computed(() => chatStore.isTyping)
 const isLoadingConversation = computed(() => chatStore.isLoadingConversation)
+const isSystemAutomaticReply = (message) =>
+  message.meta?.is_automated === true &&
+  !message.meta?.is_csat &&
+  message.author.type === 'agent' &&
+  message.author.first_name === 'System' &&
+  !message.author.last_name
+
 const GROUP_WINDOW_MS = 60_000
 const canGroup = (a, b) => {
   if (!a || !b) return false
   if (a.meta?.is_csat || b.meta?.is_csat) return false
   if (a.status === 'failed' || b.status === 'failed') return false
   if (!a.author?.id || a.author.id !== b.author?.id) return false
+  if (isSystemAutomaticReply(a) !== isSystemAutomaticReply(b)) return false
   const aBucket = Math.floor(new Date(a.created_at).getTime() / GROUP_WINDOW_MS)
   const bBucket = Math.floor(new Date(b.created_at).getTime() / GROUP_WINDOW_MS)
   return aBucket === bBucket

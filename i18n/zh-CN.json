@@ -1089,6 +1089,7 @@
   "webhook.new": "新建 Webhook",
   "webhook.sendTest": "发送测试",
   "webhook.sentSuccessfully": "Webhook 发送成功",
+  "widget.automaticReply": "自动回复",
   "widget.conversationClosed": "此会话已关闭",
   "widget.ipBlocked": "访问被拒绝",
   "widget.prechatForm.startChat": "开始聊天"
