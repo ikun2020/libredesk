@@ -19,16 +19,14 @@
     </div>
 </article>
 
+{{ if and .Data.Related (not .Data.HelpCenter.Theme.Article.HideRelated) }}
 <div class="hcd-article-foot">
-    {{ template "hc-helpful" . }}
-
-    {{ if and .Data.Related (not .Data.HelpCenter.Theme.Article.HideRelated) }}
     <aside class="hcd-related">
         <h2>{{ .L.T "helpCenter.relatedArticles" }}</h2>
         {{ template "docs-article-rows" (map "Articles" .Data.Related "Base" .Data.HelpCenter.BasePath) }}
     </aside>
-    {{ end }}
 </div>
+{{ end }}
 
 {{ template "hc-article-behavior" . }}
 

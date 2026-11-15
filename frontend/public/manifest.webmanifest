@@ -1,6 +1,6 @@
 {
-  "name": "libredesk",
-  "short_name": "libredesk",
+  "name": "Support",
+  "short_name": "Support",
   "description": "Customer support desk",
   "start_url": "/inboxes/assigned",
   "scope": "/",

@@ -139,12 +139,10 @@ body.hcd::after {
 .hcd-sidebar-toggle { display: none; transition: scale .12s cubic-bezier(0.23, 1, 0.32, 1); }
 .hcd-search-btn:active:not(:focus-visible),
 .hcd-hero-search:active:not(:focus-visible),
-.hcd-sidebar-toggle:active:not(:focus-visible),
-.hc-helpful button:active:not(:focus-visible) { scale: .97; }
+.hcd-sidebar-toggle:active:not(:focus-visible) { scale: .97; }
 .hcd-search-btn:focus-visible,
 .hcd-hero-search:focus-visible,
-.hcd-sidebar-toggle:focus-visible,
-.hc-helpful button:focus-visible { transition: none; }
+.hcd-sidebar-toggle:focus-visible { transition: none; }
 
 /* Topbar search trigger, styled as a slim input, centered in the bar. */
 .hcd-search-btn {
@@ -452,27 +450,7 @@ main#hc-main > .hcd-collections-section { max-width: calc(var(--hcd-content-w) +
     .hcd-article h1, .hcd-article .hcd-lead, .hcd-article .hcd-meta { max-width: var(--hcd-content-w); }
 }
 
-/* Was this helpful */
 .hcd-article-foot { margin-top: 2.5rem; }
-.hc-helpful {
-    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem;
-    /* Tall enough for the buttons, so swapping them for the thank-you line moves nothing below. */
-    padding-top: 1.5rem; min-height: calc(1.5rem + 36px);
-    border-top: 1px solid var(--hc-border);
-}
-.hc-helpful-actions { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
-.hc-helpful-error { flex-basis: 100%; color: var(--hc-muted); font-size: .9rem; }
-.hc-helpful button:disabled { opacity: .6; cursor: wait; }
-.hc-helpful [hidden] { display: none; }
-.hc-helpful .hc-helpful-q { color: var(--hc-ink); font-size: .95rem; font-weight: 550; }
-.hc-helpful button {
-    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
-    min-width: 62px; min-height: 36px; padding: .4rem .8rem; font-family: inherit; font-size: .875rem; line-height: 1.25rem; font-weight: 500; cursor: pointer;
-    color: var(--hc-ink); background: var(--hc-bg);
-    border: 1px solid var(--hc-border); border-radius: var(--hc-radius-sm); transition: border-color .15s, background-color .15s, color .15s, scale .12s cubic-bezier(0.23, 1, 0.32, 1);
-}
-.hc-helpful button:hover:not(:disabled) { border-color: var(--hc-accent-line); background: var(--hc-accent-tint); color: var(--hc-accent-ink); }
-.hc-helpful .hc-helpful-thanks { color: var(--hc-muted); font-size: .95rem; }
 
 .hcd-related { margin-top: 2.25rem; }
 .hcd-related h2 { margin: 0 0 .3rem; font-size: 1.2rem; font-weight: 700; letter-spacing: -.012em; }
@@ -630,8 +608,6 @@ main#hc-main > .hcd-collections-section { max-width: calc(var(--hcd-content-w) +
     .hcd-search-btn svg { width: 1.1rem; height: 1.1rem; }
     main#hc-main { padding: 1.5rem 1.25rem 3rem; }
     .hcd-hero-search .hcd-kbd-combo { display: none; }
-    .hc-helpful { min-height: calc(1.5rem + 44px); }
-    .hc-helpful button { min-height: 44px; }
 }
 @media (hover: hover) and (pointer: fine) {
     .hcd-popular a:hover .hc-arrow { color: var(--hc-accent-ink); transform: translateX(2px); }
@@ -645,5 +621,5 @@ main#hc-main > .hcd-collections-section { max-width: calc(var(--hcd-content-w) +
     * { transition: none !important; }
     .hcd-popular a:hover .hc-arrow, .hcd-article-rows a:hover .hc-arrow, .hcd-folder-rows a:hover .hc-arrow { transform: none; }
     [dir="rtl"] .hcd-popular a:hover .hc-arrow, [dir="rtl"] .hcd-article-rows a:hover .hc-arrow, [dir="rtl"] .hcd-folder-rows a:hover .hc-arrow { transform: rotate(180deg); }
-    .hcd-search-btn:active:not(:focus-visible), .hcd-hero-search:active:not(:focus-visible), .hcd-sidebar-toggle:active:not(:focus-visible), .hc-helpful button:active:not(:focus-visible) { scale: none; }
+    .hcd-search-btn:active:not(:focus-visible), .hcd-hero-search:active:not(:focus-visible), .hcd-sidebar-toggle:active:not(:focus-visible) { scale: none; }
 }
