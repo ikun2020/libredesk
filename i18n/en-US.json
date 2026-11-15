@@ -1666,6 +1666,8 @@
   "replyBox.invalidEmailsIn": "Invalid email(s) in",
   "replyBox.missingTagsDescription": "This conversation has no tags. Tagging helps with reporting and triage. You can still send without tagging.",
   "replyBox.missingTagsTitle": "No tags on this conversation",
+  "replyBox.noQuickReplies": "No quick replies available",
+  "replyBox.quickSend": "Quick send",
   "replyBox.removeBCC": "Remove BCC",
   "replyBox.removeCC": "Remove CC",
   "replyBox.sendAndSetAs": "Send and set as",

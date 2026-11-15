@@ -965,6 +965,8 @@
   "replyBox.invalidEmailsIn": "存在无效的电子邮件",
   "replyBox.missingTagsDescription": "此会话没有标签。添加标签有助于报告和分类。您仍可以在不加标签的情况下发送。",
   "replyBox.missingTagsTitle": "此会话没有标签",
+  "replyBox.noQuickReplies": "暂无可用话术",
+  "replyBox.quickSend": "快捷发送",
   "replyBox.removeBCC": "移除密送",
   "replyBox.sendAndSetAs": "发送并设置为",
   "replyBox.sendAnyway": "仍然发送",

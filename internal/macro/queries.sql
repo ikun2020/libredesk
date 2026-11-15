@@ -74,6 +74,7 @@ FROM
 WHERE
     ($1 = '' OR name ILIKE $5 ESCAPE '\')
     AND ($2 = '' OR $2 = ANY(visible_when::text[]))
+    AND (NOT $6::boolean OR message_content != '')
     AND (
         visibility = 'all'
         OR (visibility = 'user' AND user_id = $3)
@@ -82,7 +83,7 @@ WHERE
 ORDER BY
     usage_count DESC,
     updated_at DESC
-LIMIT 30;
+LIMIT CASE WHEN $6::boolean THEN NULL ELSE 30 END;
 
 -- name: create
 INSERT INTO

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 
 const editorFocus = vi.fn()
+const { searchMacros, getMacro } = vi.hoisted(() => ({ searchMacros: vi.fn(), getMacro: vi.fn() }))
 let sendFromEditor
 const conversationStore = reactive({
   current: { uuid: 'conversation-1', inbox_channel: 'livechat' },
@@ -19,15 +20,19 @@ vi.mock('@main/composables/useEmitter', () => ({
   useEmitter: () => ({ emit: vi.fn() })
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key) => key }) }))
-vi.mock('@main/api', () => ({ default: {} }))
+vi.mock('@main/api', () => ({ default: { searchMacros, getMacro } }))
 vi.mock('@main/components/editor/ConversationEditor.vue', () => ({
   default: {
-    props: ['sendOnEnter'],
+    props: ['sendOnEnter', 'insertContent'],
     emits: ['send'],
     setup(editorProps, { expose, emit }) {
       expose({ focus: editorFocus })
       sendFromEditor = () => emit('send')
-      return () => h('div', { contenteditable: true, 'data-send-on-enter': editorProps.sendOnEnter })
+      return () => h('div', {
+        contenteditable: true,
+        'data-send-on-enter': editorProps.sendOnEnter,
+        'data-insert-content': editorProps.insertContent
+      })
     }
   }
 }))
@@ -82,6 +87,8 @@ const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
 beforeEach(() => {
   editorFocus.mockClear()
   onSend.mockClear()
+  searchMacros.mockReset()
+  getMacro.mockReset()
   conversationStore.current.uuid = 'conversation-1'
 })
 
@@ -171,5 +178,57 @@ describe('reply editor sending', () => {
     sendFromEditor()
     await settle()
     expect(onSend).toHaveBeenCalledOnce()
+  })
+})
+
+describe('quick send', () => {
+  const openQuickSend = () => {
+    const trigger = Array.from(host.querySelectorAll('button')).find(
+      (button) => button.textContent.trim() === 'replyBox.quickSend'
+    )
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  }
+
+  beforeEach(() => {
+    searchMacros.mockResolvedValue({ data: { data: [{ id: 1, name: 'Payment follow-up' }] } })
+  })
+
+  it('lists reply macros and inserts only the selected body without sending', async () => {
+    getMacro.mockResolvedValue({ data: { data: {
+      message_content: '<p>Thanks for your payment.</p>',
+      visible_when: ['replying'],
+      actions: [{ type: 'set_status', value: ['Closed'] }]
+    } } })
+    await mount()
+    openQuickSend()
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[role="menuitem"]')?.textContent.trim()).toBe('Payment follow-up')
+    })
+    expect(searchMacros).toHaveBeenCalledWith({ view: 'replying', message_only: true })
+    document.querySelector('[role="menuitem"]').click()
+
+    await vi.waitFor(() => {
+      expect(host.querySelector('[contenteditable]').getAttribute('data-insert-content'))
+        .toBe('<p>Thanks for your payment.</p>')
+    })
+    expect(getMacro).toHaveBeenCalledWith(1)
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('discards a quick reply that finishes loading after changing conversations', async () => {
+    let finishLoading
+    getMacro.mockImplementation(() => new Promise((resolve) => { finishLoading = resolve }))
+    await mount()
+    openQuickSend()
+    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')).not.toBeNull())
+    document.querySelector('[role="menuitem"]').click()
+
+    conversationStore.current.uuid = 'conversation-2'
+    await settle()
+    finishLoading({ data: { data: { message_content: '<p>Old reply</p>', visible_when: ['replying'] } } })
+    await settle()
+
+    expect(host.querySelector('[contenteditable]').hasAttribute('data-insert-content')).toBe(false)
   })
 })

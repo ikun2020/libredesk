@@ -113,10 +113,10 @@ func (m *Manager) GetAllCompact(query string, page, pageSize int) ([]models.Macr
 	return macros, nil
 }
 
-// SearchCompact returns the top macros without message content visible to the given user.
-func (m *Manager) SearchCompact(query, view string, userID int, teamIDs []int) ([]models.MacroCompact, error) {
+// SearchCompact returns up to 30 visible macros, or all visible macros with message content when messageOnly is true.
+func (m *Manager) SearchCompact(query, view string, userID int, teamIDs []int, messageOnly bool) ([]models.MacroCompact, error) {
 	macros := make([]models.MacroCompact, 0)
-	err := m.q.SearchCompact.Select(&macros, query, view, userID, pq.Array(teamIDs), dbutil.ContainsPattern(query))
+	err := m.q.SearchCompact.Select(&macros, query, view, userID, pq.Array(teamIDs), dbutil.ContainsPattern(query), messageOnly)
 	if err != nil {
 		m.lo.Error("error searching macros", "error", err)
 		return nil, envelope.NewError(envelope.GeneralError, m.i18n.T("globals.messages.somethingWentWrong"), nil)
