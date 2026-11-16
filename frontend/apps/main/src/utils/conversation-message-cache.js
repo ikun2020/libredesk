@@ -14,6 +14,9 @@ export default class MessageCache {
         conv.hasMore = totalPages > conv.lastFetchedPage
         conv.totalPages = totalPages
         conv.pages.set(page, [...(conv.pages.get(page) || []), ...uniqueMsgs])
+        if (page === 1) {
+            conv.latestFetchedAt = Math.max(0, ...messages.map(message => Date.parse(message.created_at) || 0))
+        }
     }
 
     purgeConversation (convId) {
@@ -79,6 +82,15 @@ export default class MessageCache {
 
     getLastFetchedPage (convId) {
         return this.cache.get(convId)?.lastFetchedPage || 0
+    }
+
+    getLatestFetchedAt (convId) {
+        return this.cache.get(convId)?.latestFetchedAt || 0
+    }
+
+    getLatestPersistedAt (convId) {
+        return this._allMessages(convId).reduce((latest, message) =>
+            message.id > 0 ? Math.max(latest, Date.parse(message.created_at) || 0) : latest, 0)
     }
 
     pruneOldConversations (convId) {

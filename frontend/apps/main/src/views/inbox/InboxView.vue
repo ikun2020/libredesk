@@ -6,7 +6,7 @@
 <script setup>
 import { computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useIntervalFn, useDocumentVisibility } from '@vueuse/core'
+import { useIntervalFn, useDocumentVisibility, useEventListener } from '@vueuse/core'
 import { useConversationStore } from '../../stores/conversation'
 import { CONVERSATION_LIST_TYPE, CONVERSATION_DEFAULT_STATUSES } from '../../constants/conversation'
 import ConversationPlaceholder from '@/features/conversation/ConversationPlaceholder.vue'
@@ -67,11 +67,15 @@ const { pause, resume } = useIntervalFn(
 )
 watch(visibility, v => {
   if (v === 'visible') {
-    conversationStore.refreshConversationList()
+    conversationStore.refreshInboxAfterResume()
     resume()
   } else {
     pause()
   }
+})
+
+useEventListener(window, 'pageshow', (event) => {
+  if (event.persisted) conversationStore.refreshInboxAfterResume()
 })
 
 watch([type, teamID, viewID], fetchForCurrentRoute)

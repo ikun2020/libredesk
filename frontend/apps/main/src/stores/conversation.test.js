@@ -13,7 +13,9 @@ const { api } = vi.hoisted(() => ({ api: {
   updateConversationStatus: vi.fn(), updateAssignee: vi.fn(), removeAssignee: vi.fn(), getSidebarCounts: vi.fn()
 } }))
 vi.mock('@main/api', () => ({ default: api }))
-vi.mock('vue-router', () => ({ useRouter: () => ({ currentRoute: ref({ params: { uuid: 'conversation-a' } }) }) }))
+vi.mock('vue-router', () => ({ useRouter: () => ({
+  currentRoute: ref({ name: 'inbox-conversation', params: { uuid: 'conversation-a' } })
+}) }))
 vi.mock('@main/stores/user', () => ({ useUserStore: () => ({ userID: 7, user: {}, can: () => true }) }))
 vi.mock('@main/composables/useEmitter', () => ({ useEmitter: () => ({ emit: vi.fn() }) }))
 vi.mock('@main/websocket', async importOriginal => ({
@@ -42,6 +44,57 @@ const setup = () => {
   store.conversations.data = [{ uuid: 'conversation-a', unread_message_count: 2, last_message_at: reply.created_at }]
   return store
 }
+
+describe('recovering missed conversation messages', () => {
+  const page = (results, page = 1, total_pages = 1) => ({ data: { data: { results, page, total_pages } } })
+
+  it('recovers a reply when the list preview is newer than the cached conversation', async () => {
+    const store = setup()
+    api.getConversationMessages.mockResolvedValueOnce(page([reply, oldMessage]))
+
+    await store.fetchMessages('conversation-a')
+
+    expect(store.conversationMessages.map(message => message.uuid)).toEqual([oldMessage.uuid, reply.uuid])
+    await store.fetchMessages('conversation-a')
+    expect(api.getConversationMessages).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the open conversation on foreground return even with an unchanged list preview', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    try {
+      const store = setup()
+      store.conversations.data[0].last_message_at = oldMessage.created_at
+      const pending = Promise.withResolvers()
+      api.getConversationMessages.mockReturnValueOnce(pending.promise)
+
+      store.refreshInboxAfterResume()
+      store.refreshInboxAfterResume()
+      expect(api.getConversationMessages).toHaveBeenCalledTimes(1)
+      expect(store.messages.loading).toBe(false)
+      pending.resolve(page([reply, oldMessage]))
+      await vi.waitFor(() => expect(store.messages.fetchingLatest).toBe(false))
+
+      expect(store.conversationMessages.map(message => message.uuid)).toEqual([oldMessage.uuid, reply.uuid])
+    } finally {
+      hidden.mockRestore()
+    }
+  })
+
+  it('loads enough missed pages to meet the cached history and retains older pages', async () => {
+    const store = setup()
+    const older = { ...oldMessage, uuid: 'earlier-history', id: 10, created_at: '2025-12-30T00:00:00Z' }
+    store.messages.data.addMessages('conversation-a', [older], 2, 2)
+    api.getConversationMessages
+      .mockResolvedValueOnce(page([activity], 1, 3))
+      .mockResolvedValueOnce(page([reply, oldMessage], 2, 3))
+
+    await store.fetchMessages('conversation-a')
+
+    expect(api.getConversationMessages.mock.calls.map(([, params]) => params.page)).toEqual([1, 2])
+    expect(store.conversationMessages.map(message => message.uuid)).toEqual([older.uuid, oldMessage.uuid, reply.uuid, activity.uuid])
+    expect(store.currentConversationHasMoreMessages).toBe(true)
+  })
+})
 
 it('keeps the latest selection in control of loading and renders it as soon as both responses arrive', async () => {
   vi.useFakeTimers()

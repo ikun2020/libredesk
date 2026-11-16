@@ -7,6 +7,7 @@ import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 const containerWidth = ref(0)
 const compactViewport = ref(false)
 
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 vi.mock('@vueuse/core', async (importOriginal) => ({
   ...await importOriginal(),
   useElementSize: () => ({ width: containerWidth, height: ref(600) }),

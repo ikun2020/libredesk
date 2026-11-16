@@ -263,7 +263,7 @@ export const useConversationStore = defineStore('conversation', () => {
   })
 
   // Convos whose message cache is stale; drained lazily by fetchMessages on next open.
-  let staleConversationUUIDs = new Set()
+  const staleConversationUUIDs = new Set()
   const CONVERSATION_CACHE_MAX = 50
   const conversationDataCache = new Map()
 
@@ -548,6 +548,9 @@ export const useConversationStore = defineStore('conversation', () => {
         rememberAssignee(resp.data.data)
         deepMerge(conversation.data, resp.data.data)
         cacheConversationData(uuid, conversation.data)
+        if (isViewingConversation(uuid) && hasNewerMessages(uuid, resp.data.data.last_message_at)) {
+          refreshOpenMessages(uuid)
+        }
       }
     } catch (error) {
       if (activeConversationLoad === load && !handleHTTPError(error).canceled) {
@@ -564,33 +567,54 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
-  async function fetchMessages (uuid, fetchNextPage = false) {
+  function hasNewerMessages (uuid, timestamp) {
+    const time = Date.parse(timestamp)
+    return time > 0 && time > messages.data.getLatestPersistedAt(uuid)
+  }
+
+  async function fetchRecentMessages (load) {
+    const { uuid } = load
+    const latestFetchedAt = messages.data.getLatestFetchedAt(uuid)
+    const pages = []
+    for (let page = 1; ; page++) {
+      const response = await api.getConversationMessages(uuid, { page, page_size: MESSAGE_LIST_PAGE_SIZE })
+      if (activeMessageLoad !== load) return
+      const result = response.data?.data || {}
+      const results = result.results || []
+      pages.push({ page, results, totalPages: result.total_pages })
+      // After a longer pause, continue until the new pages meet the cached history.
+      if (!latestFetchedAt || !results.length || page >= (result.total_pages || 1) ||
+          results.some(message => Date.parse(message.created_at) <= latestFetchedAt)) break
+    }
+
+    const newestAdded = pages.flatMap(page => page.results)
+      .find(message => !messages.data.hasMessage(uuid, message.uuid))
+    for (const { page, results, totalPages } of pages) {
+      messages.data.addMessages(uuid, results, page, totalPages)
+    }
+    staleConversationUUIDs.delete(uuid)
+    clearPendingMessages(uuid)
+    if (newestAdded) {
+      incrementMessageVersion()
+      setTimeout(() => {
+        emitter.emit(EMITTER_EVENTS.NEW_MESSAGE, { conversation_uuid: uuid, message: newestAdded })
+      }, 100)
+    }
+  }
+
+  async function fetchMessages (uuid, fetchNextPage = false, refresh = false) {
     activeMessageLoad?.guard?.cancel()
-    const load = {}
+    const load = { uuid, fetchNextPage }
     activeMessageLoad = load
     messages.fetching = false
     messages.fetchingLatest = false
-    if (staleConversationUUIDs.has(uuid) && messages.data.hasConversation(uuid)) {
+    const cachedHistory = messages.data.getLastFetchedPage(uuid) > 0
+    const listTimestamp = conversations.data.find(conversation => conversation.uuid === uuid)?.last_message_at
+    if (!fetchNextPage && cachedHistory &&
+        (refresh || staleConversationUUIDs.has(uuid) || hasNewerMessages(uuid, listTimestamp))) {
       messages.fetchingLatest = true
       try {
-        const response = await api.getConversationMessages(uuid, { page: 1, page_size: MESSAGE_LIST_PAGE_SIZE })
-        if (activeMessageLoad !== load) return
-        const newMessages = response.data?.data?.results || []
-        let lastAdded = null
-        for (const m of newMessages) {
-          if (!messages.data.hasMessage(uuid, m.uuid)) {
-            messages.data.addMessage(uuid, m)
-            lastAdded = m
-          }
-        }
-        staleConversationUUIDs.delete(uuid)
-        clearPendingMessages(uuid)
-        if (lastAdded) {
-          incrementMessageVersion()
-          setTimeout(() => {
-            emitter.emit(EMITTER_EVENTS.NEW_MESSAGE, { conversation_uuid: uuid, message: lastAdded })
-          }, 100)
-        }
+        await fetchRecentMessages(load)
       } catch (error) {
         if (activeMessageLoad !== load) return
         const result = handleHTTPError(error)
@@ -617,6 +641,7 @@ export const useConversationStore = defineStore('conversation', () => {
       if (activeMessageLoad !== load) return
       const result = response.data?.data || {}
       messages.data.addMessages(uuid, result.results || [], result.page, result.total_pages)
+      if (!fetchNextPage) staleConversationUUIDs.delete(uuid)
       clearPendingMessages(uuid)
       incrementMessageVersion()
     } catch (error) {
@@ -638,7 +663,27 @@ export const useConversationStore = defineStore('conversation', () => {
 
   async function fetchNextMessages () {
     const uuid = conversation.data?.uuid
-    if (uuid && isViewingConversation(uuid)) return fetchMessages(uuid, true)
+    if (uuid && isViewingConversation(uuid) && !messages.fetchingLatest) return fetchMessages(uuid, true)
+  }
+
+  function refreshOpenMessages (uuid) {
+    if (activeMessageLoad?.uuid === uuid && !activeMessageLoad.fetchNextPage &&
+        (messages.fetching || messages.fetchingLatest)) return
+    return fetchMessages(uuid, false, true)
+  }
+
+  function ensureLinkedMessage (uuid, messageUUID) {
+    if (typeof messageUUID !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(messageUUID)) return
+    if (isViewingConversation(uuid) && !messages.data.hasMessage(uuid, messageUUID)) {
+      return fetchMessage(uuid, messageUUID)
+    }
+  }
+
+  function refreshInboxAfterResume () {
+    const { name, params } = router.currentRoute.value
+    if (document.hidden || !/^(?:(?:team|view)-)?inbox(?:-conversation)?$/.test(String(name))) return
+    if (!conversations.fetching) fetchFirstPageConversations()
+    if (params.uuid) refreshOpenMessages(params.uuid)
   }
 
   async function fetchMessage (conversationUUID, messageUUID) {
@@ -829,6 +874,10 @@ export const useConversationStore = defineStore('conversation', () => {
     conversations.total = apiResponse.total
 
     trimListToCurrentPage()
+
+    const openUUID = router.currentRoute.value.params.uuid
+    const openRow = apiResponse.results.find(row => row.uuid === openUUID)
+    if (openRow && hasNewerMessages(openUUID, openRow.last_message_at)) refreshOpenMessages(openUUID)
 
     // Re-check document.hidden in case the user returned while the refresh was in flight.
     if (pendingNotificationUUIDs.size > 0) {
@@ -1426,6 +1475,7 @@ export const useConversationStore = defineStore('conversation', () => {
     addNewConversation,
     getContactFullName,
     fetchNextMessages,
+    ensureLinkedMessage,
     fetchNextConversations,
     mergeMessageUpdate,
     updateAssigneeLastSeen,
@@ -1442,6 +1492,7 @@ export const useConversationStore = defineStore('conversation', () => {
     updatePriority,
     updateStatus,
     refreshConversationList,
+    refreshInboxAfterResume,
     resetConversations,
     updateConversationLastMessage,
     fetchFirstPageConversations,

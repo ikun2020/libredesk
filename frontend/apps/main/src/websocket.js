@@ -6,6 +6,8 @@ import { useConnectionStore } from './stores/connection'
 import { WS_EVENT, WS_EPHEMERAL_TYPES } from './constants/websocket'
 import { playNotificationSound } from '@shared-ui/composables/useNotificationSound'
 
+const RESUME_PONG_TIMEOUT_MS = 3000
+
 export class WebSocketClient {
   constructor() {
     this.socket = null
@@ -17,6 +19,8 @@ export class WebSocketClient {
     this.reconnectTimer = null
     this.manualClose = false
     this.pingInterval = null
+    this.resumeProbeTimer = null
+    this.lastResumeProbeAt = null
     this.lastPong = Date.now()
     this.convStore = useConversationStore()
     this.notificationStore = useNotificationStore()
@@ -54,12 +58,13 @@ export class WebSocketClient {
     if (event.target !== this.socket) return
     console.log('WebSocket connected')
     const wasReconnect = this.reconnectAttempts > 0
+    this.clearReconnect()
     this.reconnectInterval = 1000
     this.reconnectAttempts = 0
-    this.isReconnecting = false
     this.connectionStore.setConnecting(false)
     this.connectionStore.setConnectionFailed(false)
     this.lastPong = Date.now()
+    this.lastResumeProbeAt = this.lastPong
     this.setupPing()
     this.flushMessageQueue()
     if (wasReconnect) {
@@ -68,6 +73,7 @@ export class WebSocketClient {
       this.subscribeListReplace(uuids)
       const openUUID = this.convStore.conversation.data?.uuid
       if (openUUID) this.subscribeToConversation(openUUID)
+      this.convStore.refreshInboxAfterResume()
     }
   }
 
@@ -78,6 +84,7 @@ export class WebSocketClient {
 
       if (event.data === 'pong') {
         this.lastPong = Date.now()
+        this.clearResumeProbe()
         return
       }
 
@@ -174,7 +181,7 @@ export class WebSocketClient {
   }
 
   reconnect () {
-    if (this.isReconnecting) return
+    if (this.manualClose || this.isReconnecting) return
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.connectionStore.setConnecting(false)
       this.connectionStore.setConnectionFailed(true)
@@ -196,29 +203,73 @@ export class WebSocketClient {
     }, this.reconnectInterval)
   }
 
+  clearReconnect () {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    this.isReconnecting = false
+  }
+
   setupNetworkListeners () {
     window.addEventListener('online', () => {
-      // Clear any pending reconnect attempts.
-      if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer)
-        this.reconnectTimer = null
-      }
+      if (this.manualClose) return
+      this.clearReconnect()
       this.reconnectAttempts = 0
       this.reconnectInterval = 1000
-      this.isReconnecting = false
       if (this.socket) {
         this.socket.close()
       }
       this.reconnect()
     })
 
-    window.addEventListener('focus', () => {
-      if (this.socket?.readyState !== WebSocket.OPEN) {
-        this.reconnectAttempts = 0
-        this.reconnectInterval = 1000
-        this.reconnect()
+    window.addEventListener('focus', () => this.probeOnResume())
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.clearResumeProbe()
+        this.lastResumeProbeAt = null
+      } else {
+        this.probeOnResume()
       }
     })
+  }
+
+  probeOnResume () {
+    if (this.manualClose || this.isReconnecting || document.hidden || navigator.onLine === false) return
+    const socket = this.socket
+    const isOpen = socket?.readyState === WebSocket.OPEN
+    if (!isOpen && socket?.readyState !== WebSocket.CONNECTING) {
+      this.reconnectAttempts = 0
+      this.reconnectInterval = 1000
+      this.reconnect()
+      return
+    }
+
+    // A suspended connection can still report OPEN. Let an in-progress handshake
+    // finish within the same timeout, and coalesce paired foreground events.
+    const now = Date.now()
+    if (this.resumeProbeTimer !== null ||
+      (this.lastResumeProbeAt !== null && now - this.lastResumeProbeAt < RESUME_PONG_TIMEOUT_MS)) return
+    this.lastResumeProbeAt = now
+
+    this.resumeProbeTimer = setTimeout(() => {
+      this.resumeProbeTimer = null
+      if (this.socket !== socket || document.hidden) return
+      socket.close()
+      this.reconnect()
+    }, RESUME_PONG_TIMEOUT_MS)
+
+    if (!isOpen) return
+    try {
+      socket.send('ping')
+    } catch {
+      this.clearResumeProbe()
+      socket.close()
+      this.reconnect()
+    }
+  }
+
+  clearResumeProbe () {
+    if (this.resumeProbeTimer !== null) clearTimeout(this.resumeProbeTimer)
+    this.resumeProbeTimer = null
   }
 
   setupPing () {
@@ -240,6 +291,7 @@ export class WebSocketClient {
   }
 
   clearPing () {
+    this.clearResumeProbe()
     if (this.pingInterval) {
       clearInterval(this.pingInterval)
       this.pingInterval = null
@@ -342,6 +394,7 @@ export class WebSocketClient {
 
   close () {
     this.manualClose = true
+    this.clearReconnect()
     this.clearPing()
     this.connectionStore.setConnecting(false)
     this.connectionStore.setConnectionFailed(false)

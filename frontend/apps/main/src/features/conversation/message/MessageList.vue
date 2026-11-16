@@ -135,6 +135,12 @@ watch(
 const { canAssignAgent } = useBulkActionPermissions()
 let currentConversationUUID = ''
 let openScrollDone = false
+let scrolledToMessage = ''
+
+const linkedMessageUUID = computed(() => typeof route.query.scrollTo === 'string' ? route.query.scrollTo : '')
+const hasLinkedMessage = computed(() => !!linkedMessageUUID.value &&
+  conversationStore.conversationMessages.some(message => message.uuid === linkedMessageUUID.value)
+)
 
 useConversationRead({
   root: threadEl,
@@ -174,8 +180,8 @@ const handleScrollToBottom = () => {
 const applyOpenScroll = () => {
   const thread = threadEl.value
   if (!thread) return
-  const targetUUID = route.query.scrollTo
-  const targetEl = targetUUID ? thread.querySelector(`[data-message-uuid="${targetUUID}"]`) : null
+  const targetUUID = linkedMessageUUID.value
+  const targetEl = targetUUID ? thread.querySelector(`[data-message-uuid="${CSS.escape(targetUUID)}"]`) : null
   if (targetEl) {
     hasUserScrolled.value = true
     // Messages above the target collapse to max-h after mount, so re-pin until offsetTop stops moving.
@@ -184,7 +190,8 @@ const applyOpenScroll = () => {
     let stableFrames = 0
     let frames = 0
     const anchorToTarget = () => {
-      if (!threadEl.value || !targetEl.isConnected || anchorConversation !== currentConversationUUID) return
+      if (!threadEl.value || !targetEl.isConnected || anchorConversation !== currentConversationUUID ||
+          targetUUID !== linkedMessageUUID.value) return
       const offset = targetEl.offsetTop
       scrollToOffset(Math.max(0, offset - threadEl.value.clientHeight * MENTION_TOP_OFFSET_RATIO))
       stableFrames = offset === lastOffset ? stableFrames + 1 : 0
@@ -235,10 +242,13 @@ watch(
     currentConversationUUID = newUUID
     unReadMessages.value = 0
     openScrollDone = false
+    scrolledToMessage = ''
     readReady.value = false
     showAssignNudge.value = false
   }
 )
+
+watch(linkedMessageUUID, () => { scrolledToMessage = '' })
 
 watch(
   () => conversationStore.current?.assigned_user_id,
@@ -248,12 +258,20 @@ watch(
 )
 
 watch(
-  () => [conversationStore.conversationMessages.length, conversationStore.messages.loading],
-  ([len, loading]) => {
-    if (openScrollDone || loading || !len) return
+  () => [conversationStore.conversationMessages.length, conversationStore.messages.loading,
+    conversationStore.current?.uuid, linkedMessageUUID.value, hasLinkedMessage.value],
+  ([len, loading, uuid, target, hasTarget]) => {
+    const shouldAnchor = hasTarget && scrolledToMessage !== target
+    if (loading || !len || uuid !== route.params.uuid || (openScrollDone && !shouldAnchor)) return
     openScrollDone = true
-    hasUserScrolled.value = !!route.query.scrollTo
-    nextTick(applyOpenScroll)
+    if (shouldAnchor) {
+      scrolledToMessage = target
+      readReady.value = false
+    }
+    hasUserScrolled.value = !!target
+    nextTick(() => {
+      if (uuid === conversationStore.current?.uuid && target === linkedMessageUUID.value) applyOpenScroll()
+    })
   },
   { immediate: true }
 )
@@ -294,6 +312,7 @@ const loadMore = async () => {
     loadingOlder.value ||
     conversationStore.messages.loading ||
     conversationStore.messages.fetching ||
+    conversationStore.messages.fetchingLatest ||
     !conversationStore.currentConversationHasMoreMessages
   ) return
   const thread = threadEl.value
@@ -337,7 +356,7 @@ const fillShortThread = () => {
   ) loadMore()
 }
 
-watch([threadHeight, readReady], fillShortThread, { flush: 'post' })
+watch([threadHeight, readReady, () => conversationStore.messages.fetchingLatest], fillShortThread, { flush: 'post' })
 
 const messageRows = computed(() => {
   const messages = conversationStore.conversationMessages

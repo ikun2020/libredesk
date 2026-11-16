@@ -82,6 +82,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { useElementSize, useMediaQuery, useStorage } from '@vueuse/core'
 import { useConversationStore } from '@main/stores/conversation'
 import { useEmitter } from '@main/composables/useEmitter'
@@ -99,6 +100,7 @@ const props = defineProps({
 })
 
 const conversationStore = useConversationStore()
+const route = useRoute()
 const emitter = useEmitter()
 const duoSplit = useIPhoneDuoInbox()
 const compactViewport = useMediaQuery('(max-width: 1279px)')
@@ -188,18 +190,22 @@ const fetchConversation = async (uuid) => {
   ])
 }
 
-// Initial fetch
-onMounted(() => {
-  if (props.uuid) fetchConversation(props.uuid)
-})
-
 watch(
-  () => props.uuid,
-  (newUUID, oldUUID) => {
-    sheetSidebarOpen.value = false
-    if (!newUUID || newUUID === oldUUID) return
-    fetchConversation(newUUID)
-  }
+  [() => props.uuid, () => route.query.scrollTo],
+  async ([uuid, messageUUID], [previousUUID]) => {
+    if (!uuid) return
+    if (uuid !== previousUUID) {
+      sheetSidebarOpen.value = false
+      await fetchConversation(uuid)
+    } else if (messageUUID) {
+      // A notification may change only the message link within an already-open conversation.
+      await conversationStore.fetchMessages(uuid, false, true)
+    }
+    if (messageUUID && props.uuid === uuid && route.query.scrollTo === messageUUID) {
+      await conversationStore.ensureLinkedMessage(uuid, messageUUID)
+    }
+  },
+  { immediate: true }
 )
 </script>
 
