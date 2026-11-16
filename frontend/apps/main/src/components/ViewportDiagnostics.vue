@@ -11,13 +11,23 @@
         <X class="size-4" aria-hidden="true" />
       </Button>
     </div>
-    <p class="mt-1 text-xs text-muted-foreground">{{ t('diagnostics.instructions') }}</p>
+    <p class="mt-1 text-xs text-muted-foreground">
+      {{ t(recovery.enabled ? 'diagnostics.recoveryInstructions' : 'diagnostics.instructions') }}
+    </p>
     <p class="mt-2 text-xs text-muted-foreground">{{ t('diagnostics.privacy') }}</p>
     <div class="mt-3 flex flex-wrap gap-2">
       <Button type="button" size="sm" @click="copyReport">{{ t('diagnostics.copy') }}</Button>
       <Button type="button" size="sm" variant="outline" @click="downloadReport">{{ t('diagnostics.download') }}</Button>
-      <Button type="button" size="sm" variant="outline" @click="recalculateViewport">{{ t('diagnostics.recalculate') }}</Button>
+      <Button v-if="!recovery.enabled" type="button" size="sm" variant="outline" @click="recalculateViewport">
+        {{ t('diagnostics.recalculate') }}
+      </Button>
+      <Button v-if="recoverySupported" type="button" size="sm" variant="outline" @click="toggleRecovery">
+        {{ t(recovery.enabled ? 'diagnostics.recoveryStop' : 'diagnostics.recoveryStart') }}
+      </Button>
     </div>
+    <p v-if="recovery.status !== 'disabled'" class="mt-2 text-xs" role="status">
+      {{ t(`diagnostics.recoveryStatus.${recovery.status}`) }}
+    </p>
     <p v-if="status" class="mt-2 text-xs" role="status">{{ t(status) }}</p>
   </aside>
 </template>
@@ -35,6 +45,8 @@ const { t } = useI18n()
 const { active, stop } = useViewportDiagnostics()
 const settingsStore = useAppSettingsStore()
 const status = ref('')
+const recoverySupported = ref(false)
+const recovery = ref({ enabled: false, status: 'disabled' })
 let recorder
 let downloadUrl
 let revokeTimer
@@ -50,9 +62,19 @@ watch(active, enabled => {
   recorder = undefined
   clearDownload()
   status.value = ''
+  recoverySupported.value = false
+  recovery.value = { enabled: false, status: 'disabled' }
   if (enabled) {
-    recorder = createViewportRecorder({ version: settingsStore.settings['app.version'] || '' })
-    recorder.start()
+    let current
+    current = createViewportRecorder({
+      version: settingsStore.settings['app.version'] || '',
+      onRecoveryChange: state => {
+        if (current && recorder === current) recovery.value = state
+      }
+    })
+    recorder = current
+    current.start()
+    recoverySupported.value = current.isDuoRecoverySupported()
   }
 }, { immediate: true })
 
@@ -65,6 +87,15 @@ const recalculateViewport = () => {
   status.value = recorder.recalculateViewport()
     ? 'diagnostics.recalculationRequested'
     : 'diagnostics.recalculationUnavailable'
+}
+
+const toggleRecovery = () => {
+  status.value = ''
+  if (recovery.value.enabled) {
+    recorder.stopDuoRecovery()
+  } else if (!recorder.startDuoRecovery()) {
+    status.value = 'diagnostics.recoveryUnavailable'
+  }
 }
 
 const copyReport = async () => {
@@ -92,6 +123,7 @@ const downloadReport = () => {
 
 onUnmounted(() => {
   recorder?.stop()
+  recorder = undefined
   clearDownload()
   stop()
 })

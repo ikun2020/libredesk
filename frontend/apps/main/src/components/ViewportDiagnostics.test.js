@@ -28,6 +28,7 @@ let host
 let recorders
 let writeText
 let anchorClick
+let duoRecoverySupported
 
 const settle = async () => {
   await nextTick()
@@ -56,10 +57,18 @@ beforeEach(() => {
   vi.useFakeTimers()
   controls.stop()
   recorders = []
-  createRecorder.mockReset().mockImplementation(() => {
+  duoRecoverySupported = false
+  createRecorder.mockReset().mockImplementation(({ onRecoveryChange }) => {
     const recorder = {
       start: vi.fn(), stop: vi.fn(), capture: vi.fn(),
       recalculateViewport: vi.fn(() => true),
+      isDuoRecoverySupported: vi.fn(() => duoRecoverySupported),
+      startDuoRecovery: vi.fn(() => {
+        onRecoveryChange({ enabled: true, status: 'arming' })
+        return true
+      }),
+      stopDuoRecovery: vi.fn(() => onRecoveryChange({ enabled: false, status: 'disabled' })),
+      emitRecovery: onRecoveryChange,
       exportReport: vi.fn(() => reportText)
     }
     recorders.push(recorder)
@@ -91,12 +100,50 @@ describe('viewport diagnostic controls', () => {
     expect(host.querySelector('aside')).toBeNull()
     expect(createRecorder).not.toHaveBeenCalled()
     const recorder = await start()
-    expect(createRecorder).toHaveBeenCalledWith({ version: 'test-version' })
+    expect(createRecorder).toHaveBeenCalledWith({
+      version: 'test-version',
+      onRecoveryChange: expect.any(Function)
+    })
     expect(recorder.start).toHaveBeenCalledOnce()
     expect(button('diagnostics.copy')).toBeTruthy()
     expect(button('diagnostics.download')).toBeTruthy()
+    expect(button('diagnostics.recoveryStart')).toBeUndefined()
+    expect(recorder.startDuoRecovery).not.toHaveBeenCalled()
     expect(writeText).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('starts the Duo recovery only on request and shows the measured result', async () => {
+    duoRecoverySupported = true
+    await mount()
+    const recorder = await start()
+    expect(recorder.startDuoRecovery).not.toHaveBeenCalled()
+    expect(button('diagnostics.recalculate')).toBeTruthy()
+    button('diagnostics.recoveryStart').click()
+    await settle()
+    expect(recorder.startDuoRecovery).toHaveBeenCalledOnce()
+    expect(button('diagnostics.recalculate')).toBeUndefined()
+    expect(host.textContent).toContain('diagnostics.recoveryInstructions')
+    expect(host.querySelector('[role="status"]').textContent).toBe('diagnostics.recoveryStatus.arming')
+    recorder.emitRecovery({ enabled: true, status: 'measured-restored' })
+    await settle()
+    expect(host.querySelector('[role="status"]').textContent).toBe('diagnostics.recoveryStatus.measured-restored')
+    button('diagnostics.recoveryStop').click()
+    await settle()
+    expect(recorder.stopDuoRecovery).toHaveBeenCalledOnce()
+    expect(button('diagnostics.recalculate')).toBeTruthy()
+    expect(host.querySelector('[role="status"]')).toBeNull()
+  })
+
+  it('reports when a Duo recovery test cannot start', async () => {
+    duoRecoverySupported = true
+    await mount()
+    const recorder = await start()
+    recorder.startDuoRecovery.mockReturnValue(false)
+    button('diagnostics.recoveryStart').click()
+    await settle()
+    expect(button('diagnostics.recoveryStop')).toBeUndefined()
+    expect(host.querySelector('[role="status"]').textContent).toBe('diagnostics.recoveryUnavailable')
   })
 
   it.each([true, false])('requests recalculation only on a separate click and reports acceptance=%s', async accepted => {
@@ -150,8 +197,11 @@ describe('viewport diagnostic controls', () => {
   })
 
   it.each(['stop', 'unmount'])('releases the recorder, download URL and timer on %s', async action => {
+    duoRecoverySupported = true
     await mount()
     const recorder = await start()
+    button('diagnostics.recoveryStart').click()
+    await settle()
     button('diagnostics.download').click()
     expect(vi.getTimerCount()).toBe(1)
     if (action === 'stop') button('diagnostics.stop').click()
@@ -168,8 +218,11 @@ describe('viewport diagnostic controls', () => {
   })
 
   it('does not show an old clipboard result in a new recording session', async () => {
+    duoRecoverySupported = true
     await mount()
-    await start()
+    const firstRecorder = await start()
+    button('diagnostics.recoveryStart').click()
+    await settle()
     let resolveCopy
     writeText.mockImplementation(() => new Promise(resolve => { resolveCopy = resolve }))
     button('diagnostics.copy').click()
@@ -177,8 +230,10 @@ describe('viewport diagnostic controls', () => {
     await settle()
     const nextRecorder = await start()
     resolveCopy()
+    firstRecorder.emitRecovery({ enabled: true, status: 'measured-restored' })
     await settle()
     expect(host.querySelector('[role="status"]')).toBeNull()
+    expect(button('diagnostics.recoveryStart')).toBeTruthy()
     expect(nextRecorder.stop).not.toHaveBeenCalled()
     expect(controls.active.value).toBe(true)
   })

@@ -35,6 +35,47 @@ afterEach(() => {
 })
 
 describe('opt-in viewport diagnostic recorder', () => {
+  it('keeps auto recovery opt-in, mutually exclusive with manual recalculation, and exports its outcome', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone)', standalone: true })
+    vi.stubGlobal('screen', { width: 466, height: 678, orientation: { type: 'landscape-secondary', angle: 270 } })
+    vi.stubGlobal('devicePixelRatio', 3)
+    vi.stubGlobal('innerWidth', 867)
+    vi.stubGlobal('innerHeight', 669)
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(867)
+    const layoutHeight = vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(669)
+    Object.assign(viewport, { width: 867, height: 669 })
+    const meta = document.createElement('meta')
+    meta.name = 'viewport'
+    const original = 'width=device-width, initial-scale=1, interactive-widget=resizes-visual'
+    meta.content = original
+    document.head.append(meta)
+    try {
+      recorder.start()
+      expect(recorder.isDuoRecoverySupported()).toBe(true)
+      expect(read().duoRecovery.enabled).toBe(false)
+      expect(recorder.startDuoRecovery()).toBe(true)
+      vi.advanceTimersByTime(1000)
+      expect(meta.content).toBe(original)
+      expect(recorder.recalculateViewport()).toBe(false)
+      expect(read().lastViewportRecalculationAttempt.reason).toBe('auto-recovery-enabled')
+      layoutHeight.mockReturnValue(587)
+      vi.stubGlobal('innerHeight', 587)
+      viewport.height = 587
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(2500)
+      expect(read().duoRecovery.attempts[0]).toMatchObject({ outcome: 'not-restored', metaRestored: true })
+      expect(read().samples.some(sample => sample.reason === 'duo-recovery:during')).toBe(true)
+      expect(read().samples.at(-1).viewportUnits).toHaveProperty('dvh')
+      expect(meta.content).toBe(original)
+      expect(recorder.exportReport()).not.toMatch(/PRIVATE-DRAFT|PRIVATE-CHAT/)
+      recorder.stopDuoRecovery()
+      expect(read().duoRecovery.enabled).toBe(false)
+    } finally {
+      recorder.stop()
+      meta.remove()
+    }
+  })
+
   it('does nothing before being started, including an explicit capture call', () => {
     const add = vi.spyOn(window, 'addEventListener')
     const children = document.body.childElementCount
