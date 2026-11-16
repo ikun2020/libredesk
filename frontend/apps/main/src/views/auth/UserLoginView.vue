@@ -42,13 +42,18 @@
           </div>
         </div>
 
-        <form v-if="localLoginEnabled" @submit.prevent="loginAction" class="space-y-3">
+        <form
+          v-if="localLoginEnabled"
+          @submit.prevent="loginAction"
+          class="space-y-3"
+          :class="{ 'duo-pwa-login': isDuoPwa }"
+        >
           <div class="space-y-2">
             <Label for="email" class="text-muted-foreground">{{ t('globals.terms.email') }}</Label>
             <Input
               id="email"
               type="text"
-              autofocus
+              :autofocus="!isDuoPwa"
               autocomplete="username"
               autocapitalize="none"
               spellcheck="false"
@@ -130,6 +135,7 @@ import { Card, CardContent, CardTitle } from '@shared-ui/components/ui/card'
 import { Input } from '@shared-ui/components/ui/input'
 import { Label } from '@shared-ui/components/ui/label'
 import { useEmitter } from '@main/composables/useEmitter'
+import { hasIPhoneDuoScreen } from '@main/composables/useIPhoneDuoInbox'
 import { useUserStore } from '@main/stores/user'
 import { useI18n } from 'vue-i18n'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
@@ -152,6 +158,10 @@ const loginForm = ref({
 })
 const oidcProviders = ref([])
 const appSettingsStore = useAppSettingsStore()
+const isDuoPwa = hasIPhoneDuoScreen() &&
+  window.devicePixelRatio === 3 &&
+  window.matchMedia('(pointer: coarse)').matches &&
+  (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches)
 
 // Demo build has the credentials prefilled.
 const isDemoBuild = import.meta.env.VITE_DEMO_BUILD === 'true'
@@ -228,10 +238,11 @@ const validateForm = () => {
   return true
 }
 
-const loginAction = () => {
+const loginAction = (event) => {
   submitted.value = true
   if (!validateForm()) return
 
+  const form = event.currentTarget
   errorMessage.value = ''
   isLoading.value = true
 
@@ -243,6 +254,11 @@ const loginAction = () => {
     .then(async (resp) => {
       if (resp?.data?.data) {
         userStore.setCurrentUser(resp.data.data)
+      }
+      const focused = document.activeElement
+      if (isDuoPwa && focused instanceof HTMLInputElement && form.contains(focused)) {
+        // Submitting from the keyboard can leave an input focused until the route unmounts.
+        focused.blur()
       }
       // Load the workspace timezone before rendering the first conversation.
       await appSettingsStore.fetchSettings('general')
@@ -280,3 +296,10 @@ const emailHasError = computed(() => {
 
 const passwordHasError = computed(() => submitted.value && !loginForm.value.password)
 </script>
+
+<style scoped>
+.duo-pwa-login :deep(input) {
+  /* Wide layouts use 14px inputs, which WebKit can zoom into on focus. */
+  font-size: max(16px, 1rem);
+}
+</style>
