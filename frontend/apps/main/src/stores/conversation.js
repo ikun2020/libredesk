@@ -24,6 +24,7 @@ import api from '@main/api'
 export const useConversationStore = defineStore('conversation', () => {
   const CONV_LIST_PAGE_SIZE = 25
   const MESSAGE_LIST_PAGE_SIZE = 30
+  const OUTGOING_STATUS_CHECK_DELAYS = [1000, 4000, 10000]
   const priorities = ref([])
   const statuses = ref([])
   const currentTo = ref([])
@@ -968,12 +969,11 @@ export const useConversationStore = defineStore('conversation', () => {
     if (!messages.data.hasMessage(message.conversation_uuid, message.uuid)) {
       const echoId = message.echo_id
       if (echoId && messages.data.hasMessage(message.conversation_uuid, echoId)) {
-        messages.data.updateMessage(message.conversation_uuid, echoId, {
+        replacePendingMessage(message.conversation_uuid, echoId, {
           uuid: message.uuid,
           id: message.id,
           created_at: message.created_at
         })
-        incrementMessageVersion()
         return
       }
 
@@ -1013,6 +1013,51 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   let pendingMessageSeq = 0
+  const outgoingStatusChecks = new WeakMap()
+
+  async function checkOutgoingMessageStatus (conversationUUID, messageUUID) {
+    const message = messages.data.getMessage(conversationUUID, messageUUID)
+    if (message?.status !== 'pending' || message.status_check_timed_out || outgoingStatusChecks.has(message)) return
+
+    const check = {}
+    const isStillPending = () =>
+      outgoingStatusChecks.get(message) === check &&
+      messages.data.getMessage(conversationUUID, messageUUID) === message &&
+      message.status === 'pending'
+    outgoingStatusChecks.set(message, check)
+    try {
+      for (const delay of OUTGOING_STATUS_CHECK_DELAYS) {
+        await new Promise(resolve => setTimeout(resolve, delay))
+        if (!isStillPending()) return
+
+        let confirmed
+        const previousMeta = message.meta
+        try {
+          const response = await api.getConversationMessage(conversationUUID, messageUUID)
+          confirmed = response?.data?.data
+        } catch {
+          // The send was already accepted. A status lookup failure can be retried silently.
+        }
+        if (!isStillPending()) return
+        if (!confirmed?.status || confirmed.status === 'pending') continue
+
+        mergeMessageUpdate({
+          conversation_uuid: conversationUUID,
+          uuid: messageUUID,
+          status: confirmed.status,
+          meta: message.meta === previousMeta ? confirmed.meta ?? message.meta : { ...confirmed.meta, ...message.meta }
+        })
+        return
+      }
+
+      if (isStillPending()) {
+        messages.data.updateMessage(conversationUUID, messageUUID, { status_check_timed_out: true })
+        incrementMessageVersion()
+      }
+    } finally {
+      if (outgoingStatusChecks.get(message) === check) outgoingStatusChecks.delete(message)
+    }
+  }
 
   function addPendingMessage (conversationUUID, content, isPrivate, author, attachments = [], textContent = '', meta = {}) {
     const tempUUID = `pending-${Date.now()}-${++pendingMessageSeq}`
@@ -1050,7 +1095,7 @@ export const useConversationStore = defineStore('conversation', () => {
       })
     }, 0)
 
-    // Safety net: auto-remove after 10 seconds if still pending.
+    // Remove the temporary bubble if the server hasn't supplied a persisted UUID.
     const tempId = pendingMessage.uuid
     setTimeout(() => {
       if (messages.data.hasMessage(conversationUUID, tempId)) {
@@ -1063,12 +1108,25 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   function replacePendingMessage (conversationUUID, tempUUID, realMessage) {
-    if (messages.data.hasMessage(conversationUUID, realMessage.uuid)) {
+    const existing = messages.data.getMessage(conversationUUID, realMessage.uuid)
+    if (existing) {
       messages.data.removeMessage(conversationUUID, tempUUID)
-    } else {
+      // When the echo arrived first, keep any newer WebSocket status and metadata.
+      if (existing.render_key === tempUUID && !existing.meta?.deleted_at) {
+        const status = existing.status === 'pending' ? realMessage.status ?? existing.status : existing.status
+        messages.data.updateMessage(conversationUUID, realMessage.uuid, {
+          ...realMessage,
+          status,
+          meta: { ...realMessage.meta, ...existing.meta }
+        })
+      }
+    } else if (messages.data.hasMessage(conversationUUID, tempUUID)) {
       messages.data.updateMessage(conversationUUID, tempUUID, realMessage)
+    } else if (messages.data.hasConversation(conversationUUID) || conversation.data?.uuid === conversationUUID) {
+      messages.data.addMessage(conversationUUID, realMessage)
     }
     incrementMessageVersion()
+    checkOutgoingMessageStatus(conversationUUID, realMessage.uuid)
   }
 
   function removePendingMessage (conversationUUID, tempUUID) {
@@ -1084,9 +1142,18 @@ export const useConversationStore = defineStore('conversation', () => {
 
   function mergeMessageUpdate (data) {
     const { conversation_uuid, uuid, ...fields } = data
-    if (!messages.data.hasMessage(conversation_uuid, uuid)) return
+    const message = messages.data.getMessage(conversation_uuid, uuid)
+    if (!message) return
+    const statusChanged = fields.status && fields.status !== message.status
+    if (statusChanged && message.status_check_timed_out) fields.status_check_timed_out = false
     messages.data.updateMessage(conversation_uuid, uuid, fields)
     incrementMessageVersion()
+    if (statusChanged) {
+      outgoingStatusChecks.delete(message)
+      if (fields.status === 'pending' && message.type === 'outgoing' && !message.private) {
+        checkOutgoingMessageStatus(conversation_uuid, uuid)
+      }
+    }
   }
 
   function canPushInsert (conv) {

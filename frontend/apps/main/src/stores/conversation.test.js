@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 import { useConversationStore } from './conversation'
@@ -228,6 +228,127 @@ describe('conversation changes during navigation', () => {
     expect(api.removeAssignee).toHaveBeenCalledExactlyOnceWith('conversation-a', type)
     expect(original[`assigned_${type}_id`]).toBeNull()
     expect(store.conversation.data).toEqual({ uuid: 'conversation-b', assigned_user_id: 8, assigned_team_id: 4 })
+  })
+})
+
+describe('outgoing reply confirmation', () => {
+  const conversationUUID = 'conversation-a'
+  const outgoing = { ...reply, type: 'outgoing', status: 'pending', content: 'Saved reply' }
+  const addReply = store => store.addPendingMessage(conversationUUID, 'Draft reply', false, { id: 7 })
+  const getReply = store => store.messages.data.getMessage(conversationUUID, outgoing.uuid)
+  const statusEvent = status => ({ conversation_uuid: conversationUUID, uuid: outgoing.uuid, status })
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('recovers an early status push after the send response supplies the UUID', async () => {
+    const store = setup()
+    const tempUUID = addReply(store)
+    store.mergeMessageUpdate(statusEvent('sent'))
+    store.replacePendingMessage(conversationUUID, tempUUID, outgoing)
+    api.getConversationMessage.mockResolvedValueOnce({ data: { data: { ...outgoing, status: 'sent' } } })
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(api.getConversationMessage).toHaveBeenCalledExactlyOnceWith(conversationUUID, outgoing.uuid)
+    expect(store.conversationMessages.map(m => m.uuid)).toEqual([oldMessage.uuid, outgoing.uuid])
+    expect(getReply(store)).toMatchObject({ status: 'sent', render_key: tempUUID, content: outgoing.content })
+  })
+
+  it('keeps WebSocket status and metadata when the echo arrives before the send response', async () => {
+    const store = setup()
+    const tempUUID = addReply(store)
+    await store.updateConversationMessage({ ...outgoing, echo_id: tempUUID })
+    store.mergeMessageUpdate({ ...statusEvent('failed'), meta: { provider_failure_reason: 'Provider response' } })
+    store.replacePendingMessage(conversationUUID, tempUUID, { ...outgoing, meta: { echo_id: tempUUID } })
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(api.getConversationMessage).not.toHaveBeenCalled()
+    expect(getReply(store)).toMatchObject({
+      status: 'failed', render_key: tempUUID, content: outgoing.content,
+      meta: { echo_id: tempUUID, provider_failure_reason: 'Provider response' }
+    })
+  })
+
+  it('recovers the status from the echo alone when the terminal push is missing', async () => {
+    const store = setup()
+    const tempUUID = addReply(store)
+    await store.updateConversationMessage({ ...outgoing, echo_id: tempUUID })
+    api.getConversationMessage.mockResolvedValueOnce({ data: { data: { ...outgoing, status: 'sent' } } })
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(api.getConversationMessage).toHaveBeenCalledExactlyOnceWith(conversationUUID, outgoing.uuid)
+    expect(getReply(store)).toMatchObject({ status: 'sent', render_key: tempUUID })
+  })
+
+  it('does not overwrite a WebSocket status that arrives during the status lookup', async () => {
+    const store = setup()
+    store.replacePendingMessage(conversationUUID, addReply(store), outgoing)
+    let finish
+    api.getConversationMessage.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await vi.advanceTimersByTimeAsync(1000)
+    store.mergeMessageUpdate(statusEvent('failed'))
+
+    finish({ data: { data: { ...outgoing, status: 'sent' } } })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(getReply(store).status).toBe('failed')
+  })
+
+  it('checks an explicitly retried reply and discards the previous attempt status', async () => {
+    const store = setup()
+    store.replacePendingMessage(conversationUUID, addReply(store), outgoing)
+    let finishFirstCheck
+    api.getConversationMessage
+      .mockImplementationOnce(() => new Promise(resolve => { finishFirstCheck = resolve }))
+      .mockResolvedValueOnce({ data: { data: { ...outgoing, status: 'sent' } } })
+
+    await vi.advanceTimersByTimeAsync(1000)
+    store.mergeMessageUpdate(statusEvent('failed'))
+    store.mergeMessageUpdate(statusEvent('pending'))
+    finishFirstCheck({ data: { data: { ...outgoing, status: 'failed' } } })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(getReply(store).status).toBe('pending')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(getReply(store).status).toBe('sent')
+    expect(api.getConversationMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows a persisted reply after its temporary bubble has expired', async () => {
+    const store = setup()
+    const tempUUID = addReply(store)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(store.messages.data.hasMessage(conversationUUID, tempUUID)).toBe(false)
+
+    store.replacePendingMessage(conversationUUID, tempUUID, { ...outgoing, status: 'sent' })
+
+    expect(getReply(store).status).toBe('sent')
+  })
+
+  it('ends the status checks without assuming delivery and accepts a later WebSocket update', async () => {
+    const store = setup()
+    store.replacePendingMessage(conversationUUID, addReply(store), outgoing)
+    api.getConversationMessage
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ data: { data: outgoing } })
+      .mockResolvedValueOnce({ data: { data: outgoing } })
+
+    await vi.advanceTimersByTimeAsync(30000)
+
+    expect(api.getConversationMessage).toHaveBeenCalledTimes(3)
+    expect(getReply(store)).toMatchObject({ status: 'pending', status_check_timed_out: true })
+    store.mergeMessageUpdate(statusEvent('pending'))
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(api.getConversationMessage).toHaveBeenCalledTimes(3)
+    expect(getReply(store).status_check_timed_out).toBe(true)
+    store.mergeMessageUpdate(statusEvent('sent'))
+    expect(getReply(store)).toMatchObject({ status: 'sent', status_check_timed_out: false })
   })
 })
 

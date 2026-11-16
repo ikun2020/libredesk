@@ -21,7 +21,11 @@ export default class MessageCache {
     }
 
     hasMessage (convId, msgId) {
-        return this._allMessages(convId).some(m => m.uuid === msgId)
+        return this.getMessage(convId, msgId) !== undefined
+    }
+
+    getMessage (convId, msgId) {
+        return this._allMessages(convId).find(m => m.uuid === msgId)
     }
 
     addMessage (convId, message) {

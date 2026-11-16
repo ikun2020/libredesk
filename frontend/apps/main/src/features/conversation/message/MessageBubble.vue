@@ -180,6 +180,12 @@
             <!-- Status Icons (outgoing only) -->
             <div v-if="isOutgoing" class="flex items-center space-x-2 mt-2 self-end">
               <Lock :size="12" v-if="isPrivateMessage" class="text-muted-foreground" />
+              <span v-if="statusCheckTimedOut" class="text-xs text-muted-foreground" role="status">
+                {{ t('conversation.sendStatusUnconfirmed') }}
+              </span>
+              <span v-if="message.status === 'failed'" class="text-xs text-destructive" role="status">
+                {{ t('globals.messages.errorSendingMessage') }}
+              </span>
               <Tooltip v-if="deliveryStatus">
                 <TooltipTrigger :aria-label="deliveryStatusLabel">
                   <CheckCheck
@@ -384,9 +390,15 @@ const aiAssistantRoute = computed(() => {
 
 const isOutgoing = computed(() => props.direction === 'outgoing')
 const pendingSpinner = ref(false)
+const statusCheckTimedOut = computed(
+  () => props.message.status === 'pending' && props.message.status_check_timed_out
+)
+const isSending = computed(
+  () => isOutgoing.value && props.message.status === 'pending' && !statusCheckTimedOut.value
+)
 
 watch(
-  () => isOutgoing.value && props.message.status === 'pending',
+  isSending,
   (pending, _, onCleanup) => {
     if (!pending) {
       pendingSpinner.value = false
@@ -440,7 +452,7 @@ const nonInlineAttachments = computed(() =>
 const bubbleClasses = computed(() => ({
   'bg-private': isOutgoing.value && props.message.private,
   'bg-secondary border border-border': isOutgoing.value && !props.message.private,
-  'opacity-50 animate-pulse': isOutgoing.value && props.message.status === 'pending',
+  'opacity-50 animate-pulse': isSending.value,
   'border-destructive': isOutgoing.value && props.message.status === 'failed',
   relative: isOutgoing.value,
   'show-quoted-text': !isOutgoing.value && showQuotedText.value,

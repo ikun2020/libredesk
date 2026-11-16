@@ -648,7 +648,7 @@ const processSend = async (
           send_from: isPrivate ? '' : sendFrom.value
         })
 
-        if (isPrivate && response?.data?.data) {
+        if (response?.data?.data?.uuid) {
           conversationStore.replacePendingMessage(convUUID, tempUUIDs[i], response.data.data)
         }
       } catch (error) {

@@ -505,6 +505,7 @@
   "conversation.placeholder": "从左侧面板选择一个会话。",
   "conversation.search": "搜索会话",
   "conversation.searchContact": "按电子邮件搜索联系人或输入新电子邮件",
+  "conversation.sendStatusUnconfirmed": "暂未确认发送结果",
   "conversation.sentViaEmail": "通过电子邮件发送",
   "conversation.showQuotedText": "显示引用文本",
   "conversation.sidebar.contactAttributes": "联系人属性",
