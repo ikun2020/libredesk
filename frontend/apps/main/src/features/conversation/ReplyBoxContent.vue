@@ -230,7 +230,19 @@
       :showGenerateReply="messageType !== 'private_note'"
       @emojiSelect="insertEditorContent"
       @generateReply="$emit('generateReply')"
-    />
+    >
+      <template #before-send>
+        <Button
+          type="button"
+          variant="outline"
+          class="h-8 px-3 max-md:h-11"
+          :disabled="!canClearMessage"
+          @click="clearMessage"
+        >
+          {{ t('replyBox.clearMessage') }}
+        </Button>
+      </template>
+    </ReplyBoxMenuBar>
   </div>
 </template>
 
@@ -429,6 +441,20 @@ const hideRecipientField = async (field) => {
 
 const toggleFullscreen = () => {
   emit('toggleFullscreen')
+}
+
+const canClearMessage = computed(() => {
+  const html = htmlContent.value.trim()
+  return !props.isDraftLoading && !props.isSending && !props.isGenerating &&
+    (textContent.value.length > 0 || (html !== '' && html !== '<p></p>'))
+})
+
+const clearMessage = () => {
+  if (!canClearMessage.value) return
+  htmlContent.value = ''
+  textContent.value = ''
+  mentions.value = []
+  if (!isTouchPrimary.value) nextTick(() => editorRef.value?.focus())
 }
 
 const enableSend = computed(() => {

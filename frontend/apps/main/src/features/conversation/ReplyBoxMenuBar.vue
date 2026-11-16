@@ -112,36 +112,38 @@
         <TooltipContent>{{ $t('replyBox.generateReply') }}</TooltipContent>
       </Tooltip>
     </div>
-    <div class="ml-auto flex items-center rounded-md shadow-sm">
-      <Button
-        class="h-8 max-md:h-11 px-4 rounded-r-none"
-        @click="handleSend"
-        :disabled="!enableSend"
-        :isLoading="isSending"
-        v-if="showSendButton"
-      >
-        {{ $t('globals.messages.send') }}
-      </Button>
-      <DropdownMenu v-if="showSendButton">
-        <DropdownMenuTrigger as-child>
-          <Button
-            class="h-8 max-md:h-11 px-2 rounded-l-none border-l border-primary-foreground/30 [&[data-state=open]>svg]:rotate-180"
-            :disabled="!enableSend"
-          >
-            <ChevronDownIcon class="text-primary-foreground transition-transform" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuLabel>{{ $t('replyBox.sendAndSetAs') }}</DropdownMenuLabel>
-          <DropdownMenuItem
-            v-for="status in conversationStore.statusOptionsNoSnooze"
-            :key="status.value"
-            @click="handleSendAndSetStatus(status.label)"
-          >
-            {{ status.label }}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <div v-if="showSendButton" class="ml-auto flex items-center gap-2">
+      <slot name="before-send" />
+      <div class="flex items-center rounded-md shadow-sm">
+        <Button
+          class="h-8 max-md:h-11 px-4 rounded-r-none"
+          @click="handleSend"
+          :disabled="!enableSend"
+          :isLoading="isSending"
+        >
+          {{ $t('globals.messages.send') }}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button
+              class="h-8 max-md:h-11 px-2 rounded-l-none border-l border-primary-foreground/30 [&[data-state=open]>svg]:rotate-180"
+              :disabled="!enableSend"
+            >
+              <ChevronDownIcon class="text-primary-foreground transition-transform" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuLabel>{{ $t('replyBox.sendAndSetAs') }}</DropdownMenuLabel>
+            <DropdownMenuItem
+              v-for="status in conversationStore.statusOptionsNoSnooze"
+              :key="status.value"
+              @click="handleSendAndSetStatus(status.label)"
+            >
+              {{ status.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   </div>
 </template>
