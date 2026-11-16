@@ -72,7 +72,9 @@
           :value="section.id"
           class="accordion-item"
         >
-          <AccordionTrigger class="accordion-trigger">{{ section.label }}</AccordionTrigger>
+          <AccordionTrigger class="rounded-none px-4 py-3 transition-none hover:no-underline can-hover:hover:bg-accent/40">
+            {{ section.label }}
+          </AccordionTrigger>
 
           <AccordionContent v-if="section.id === 'actions'" class="accordion-content--actions">
             <div>
@@ -459,10 +461,6 @@ const updateContactCustomAttributes = async (attributes) => {
 
 :deep(.accordion-item) {
   @apply border-b border-border last:border-b-0;
-}
-
-:deep(.accordion-trigger) {
-  @apply rounded-none px-4 py-3 text-sm font-medium can-hover:hover:bg-accent/40 hover:no-underline;
 }
 
 :deep(.accordion-content) {
