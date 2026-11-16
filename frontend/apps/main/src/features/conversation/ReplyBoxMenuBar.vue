@@ -1,26 +1,8 @@
 <template>
   <div
     class="relative flex min-h-14 shrink-0 flex-wrap justify-between gap-y-2"
-    @keydown.capture="emojiPickerPointerOpened = false"
     :class="{ 'items-end': isFullscreen, 'items-center': !isFullscreen }"
   >
-    <Transition
-      :css="emojiPickerPointerOpened"
-      enter-active-class="transition-[opacity,transform] [transition-duration:125ms] ease-out motion-reduce:duration-100"
-      enter-from-class="opacity-0 scale-[0.98] motion-reduce:scale-100"
-      enter-to-class="opacity-100 scale-100"
-      leave-active-class="transition-[opacity,transform] duration-100 ease-out"
-      leave-from-class="opacity-100 scale-100"
-      leave-to-class="opacity-0 scale-[0.98] motion-reduce:scale-100"
-    >
-      <EmojiPicker
-        ref="emojiPickerRef"
-        :native="true"
-        @select="onSelectEmoji"
-        class="origin-bottom-left absolute bottom-14 left-0 md:left-14 z-20"
-        v-if="isEmojiPickerVisible"
-      />
-    </Transition>
     <div class="flex items-center gap-1">
       <input
         type="file"
@@ -52,21 +34,43 @@
         </TooltipTrigger>
         <TooltipContent>{{ $t('globals.messages.attachFile') }}</TooltipContent>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Toggle
-            :class="ICON_BUTTON_CLASS"
-            variant="outline"
-            :aria-label="$t('globals.messages.addEmoji')"
-            ref="emojiTriggerRef"
-            @click="toggleEmojiPicker"
-            :pressed="isEmojiPickerVisible"
-          >
-            <Smile class="h-4 w-4" />
-          </Toggle>
-        </TooltipTrigger>
-        <TooltipContent>{{ $t('globals.messages.addEmoji') }}</TooltipContent>
-      </Tooltip>
+      <Popover v-model:open="isEmojiPickerVisible">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <PopoverTrigger as-child>
+              <Button
+                type="button"
+                :class="[ICON_BUTTON_CLASS, 'data-[state=open]:bg-muted']"
+                variant="outline"
+                :aria-label="$t('globals.messages.addEmoji')"
+              >
+                <Smile class="size-4" aria-hidden="true" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{{ $t('globals.messages.addEmoji') }}</TooltipContent>
+        </Tooltip>
+        <PopoverContent
+          side="top"
+          align="start"
+          :side-offset="8"
+          class="w-80 max-w-[calc(100vw-1rem)] max-h-[min(16rem,var(--radix-popover-content-available-height))] p-2"
+          :aria-label="$t('globals.messages.addEmoji')"
+        >
+          <div class="grid grid-cols-8 gap-0.5">
+            <Button
+              v-for="emoji in FACE_EMOJIS"
+              :key="emoji"
+              type="button"
+              variant="ghost"
+              class="h-9 min-w-0 p-0 text-xl leading-none"
+              @click="onSelectEmoji(emoji)"
+            >
+              {{ emoji }}
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
       <Tooltip>
         <TooltipTrigger as-child>
           <Toggle
@@ -152,11 +156,11 @@
 const ICON_BUTTON_CLASS =
   'border-border/70 bg-background px-2 py-2 text-muted-foreground shadow-none max-md:min-h-11 max-md:min-w-11'
 
-import { ref, computed, defineAsyncComponent } from 'vue'
-import { onClickOutside } from '@vueuse/core'
+import { ref, computed } from 'vue'
 import { Button } from '@shared-ui/components/ui/button'
 import { Toggle } from '@shared-ui/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@shared-ui/components/ui/popover'
 import { Paperclip, Smile, Zap, ChevronDownIcon, Sparkles, Loader2 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -172,16 +176,23 @@ import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { WHATSAPP_MEDIA_ACCEPT } from '@main/features/conversation/whatsappMedia'
 import { MACROS_COMMAND, useCommandPalette } from '@main/features/command/useCommandPalette'
 
-const EmojiPicker = defineAsyncComponent(async () => {
-  const [mod] = await Promise.all([import('vue3-emoji-picker'), import('vue3-emoji-picker/css')])
-  return mod.default
-})
+// The original picker’s face section, ending at the red goblin.
+const FACE_EMOJIS = [
+  '😀', '😁', '😂', '🤣', '😃', '😄', '😅', '😆',
+  '😉', '😊', '😋', '😎', '😍', '😘', '😗', '😙',
+  '😚', '☺️', '🙂', '🤗', '🤩', '🤔', '🤨', '😐',
+  '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐',
+  '😯', '😪', '😫', '😴', '😌', '😛', '😜', '😝',
+  '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲',
+  '☹️', '🙁', '😖', '😞', '😟', '😤', '😢', '😭',
+  '😦', '😧', '😨', '😩', '🤯', '😬', '😰', '😱',
+  '😳', '🤪', '😵', '😡', '😠', '🤬', '😷', '🤒',
+  '🤕', '🤢', '🤮', '🤧', '😇', '🤠', '🤡', '🤥',
+  '🤫', '🤭', '🧐', '🤓', '😈', '👿', '👹', '👺',
+]
 
 const attachmentInput = ref(null)
 const isEmojiPickerVisible = ref(false)
-const emojiPickerPointerOpened = ref(false)
-const emojiPickerRef = ref(null)
-const emojiTriggerRef = ref(null)
 const emit = defineEmits(['emojiSelect', 'generateReply'])
 
 const props = defineProps({
@@ -205,25 +216,12 @@ const props = defineProps({
   handleInlineImageUpload: Function
 })
 
-onClickOutside(
-  emojiPickerRef,
-  () => {
-    isEmojiPickerVisible.value = false
-  },
-  { ignore: [emojiTriggerRef] }
-)
-
 const triggerFileUpload = () => {
   if (attachmentInput.value) {
     // Clear the value to allow the same file to be uploaded again.
     attachmentInput.value.value = ''
     attachmentInput.value.click()
   }
-}
-
-const toggleEmojiPicker = (event) => {
-  emojiPickerPointerOpened.value = event.detail > 0
-  isEmojiPickerVisible.value = !isEmojiPickerVisible.value
 }
 
 const conversationStore = useConversationStore()
@@ -241,6 +239,6 @@ const openTemplatePicker = () => {
 }
 
 function onSelectEmoji(emoji) {
-  emit('emojiSelect', emoji.i)
+  emit('emojiSelect', emoji)
 }
 </script>
