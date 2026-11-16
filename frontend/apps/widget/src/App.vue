@@ -88,18 +88,21 @@ const signalWidgetLoaded = async () => {
 
 const fetchInitialConversations = async () => {
   const success = await chatStore.fetchConversations()
-  if (success && chatStore.hasConversations) {
+  if (!success) return false
+  const ongoing = chatStore.supportSyncConversation
+  let loaded = false
+  if (chatStore.hasConversations) {
     try {
-      await chatStore.loadConversation(chatStore.getConversations[0].uuid)
+      loaded = await chatStore.loadConversation((ongoing ?? chatStore.getConversations[0]).uuid)
     } catch { /* non-blocking */ }
   }
   const audience = userStore.isVisitor ? widgetStore.config?.visitors : widgetStore.config?.users
   const directToConversation =
     audience?.direct_to_conversation ?? widgetStore.config?.direct_to_conversation
-  if (directToConversation && success) {
+  if (ongoing ? loaded : directToConversation) {
     widgetStore.navigateToChat()
   }
-  return success
+  return true
 }
 
 let languageRequest = 0
@@ -158,7 +161,7 @@ const exchangeSupportSyncIdentity = async (message, parentOrigin) => {
     // again on reload, and refreshes the profile without discarding drafts.
     userStore.setSessionToken(session_token)
     setApiSessionToken(session_token)
-    userStore.setUserMeta(user)
+    userStore.setUserMeta(user, identity_provider)
     if (!refresh) {
       if (!await fetchInitialConversations()) throw new Error('Support Sync history unavailable')
       if (request !== identityRequest) return

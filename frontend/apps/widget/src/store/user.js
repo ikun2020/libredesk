@@ -5,13 +5,15 @@ import { setApiSessionToken } from '@widget/api/index.js'
 export const useUserStore = defineStore('user', () => {
     const userSessionToken = ref("")
     const isVisitor = ref(true)
+    const isSupportSync = ref(false)
     const userID = ref(null)
     const firstName = ref('')
     const lastName = ref('')
 
-    const setUserMeta = ({ user_id, is_visitor, first_name, last_name }) => {
+    const setUserMeta = ({ user_id, is_visitor, first_name, last_name }, identityProvider = '') => {
         userID.value = user_id || null
         isVisitor.value = is_visitor !== undefined ? is_visitor : true
+        isSupportSync.value = !isVisitor.value && identityProvider === 'support-sync'
         firstName.value = first_name || ''
         lastName.value = last_name || ''
     }
@@ -20,6 +22,7 @@ export const useUserStore = defineStore('user', () => {
         userSessionToken.value = ""
         setApiSessionToken('')
         isVisitor.value = true
+        isSupportSync.value = false
         userID.value = null
         firstName.value = ''
         lastName.value = ''
@@ -35,6 +38,7 @@ export const useUserStore = defineStore('user', () => {
     return {
         userSessionToken,
         isVisitor,
+        isSupportSync,
         userID,
         firstName,
         lastName,

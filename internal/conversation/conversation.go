@@ -1190,7 +1190,8 @@ func (c *Manager) UpdateConversationStatus(uuid string, statusID int, status, sn
 
 	// Broadcast conversation update to widget clients.
 	c.BroadcastConversationToWidget(uuid, conversationBeforeChange.ContactID, conversationBeforeChange.InboxID, map[string]any{
-		"status": status,
+		"status":          status,
+		"status_category": conversation.StatusCategory.String,
 	})
 
 	return nil

@@ -46,6 +46,7 @@ beforeEach(async () => {
   Object.assign(chat, {
     drafts: { thread: '尚未发送的正文' }, preChatDraft: { message: 'first draft' }, handoffDraft: {},
     conversations: [{ uuid: 'thread' }], currentConversation: { uuid: 'thread' },
+    hasConversations: false, getConversations: [], supportSyncConversation: null,
     fetchConversations: vi.fn().mockResolvedValue(true), loadConversation: vi.fn().mockResolvedValue(true),
     setCurrentConversation: vi.fn(value => { chat.currentConversation = value })
   })
@@ -151,6 +152,7 @@ test('Support Sync restores history and updates profile without exposing the ses
   api.exchangeJWTForSession.mockResolvedValue(signedResponse())
   await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt', visitorToken: 'prior-visitor' })
   expect(user.userID).toBe(42)
+  expect(user.setUserMeta).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), 'support-sync')
   expect(chat.fetchConversations).toHaveBeenCalledOnce()
   expect(parent.postMessage).toHaveBeenCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: true }, 'https://panel.example.test')
   expect(saveSession).not.toHaveBeenCalled()
@@ -162,4 +164,31 @@ test('Support Sync restores history and updates profile without exposing the ses
   await message('SUPPORT_SYNC_PROFILE', { jwt: 'different.jwt' })
   expect(user.userID).toBe(42)
   expect(parent.postMessage).toHaveBeenLastCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: false }, 'https://panel.example.test')
+})
+
+test('verified Support Sync opens the ongoing thread even when newer resolved history exists', async () => {
+  signedMode()
+  api.exchangeJWTForSession.mockResolvedValue(signedResponse())
+  const ongoing = { uuid: 'ongoing', status_category: 'open' }
+  chat.hasConversations = true
+  chat.getConversations = [{ uuid: 'resolved', status_category: 'resolved' }, ongoing]
+  chat.supportSyncConversation = ongoing
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt' })
+  expect(chat.loadConversation).toHaveBeenCalledExactlyOnceWith('ongoing')
+  expect(widget.navigateToChat).toHaveBeenCalledOnce()
+  expect(chat.getConversations.map(({ uuid }) => uuid)).toEqual(['resolved', 'ongoing'])
+})
+
+test('Support Sync does not enter an empty chat when the ongoing conversation fails to load', async () => {
+  signedMode()
+  api.exchangeJWTForSession.mockResolvedValue(signedResponse())
+  const ongoing = { uuid: 'ongoing', status_category: 'open' }
+  chat.hasConversations = true
+  chat.getConversations = [ongoing]
+  chat.supportSyncConversation = ongoing
+  chat.loadConversation.mockResolvedValueOnce(false)
+  widget.config.users = { direct_to_conversation: true }
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt' })
+  expect(chat.loadConversation).toHaveBeenCalledExactlyOnceWith('ongoing')
+  expect(widget.navigateToChat).not.toHaveBeenCalled()
 })

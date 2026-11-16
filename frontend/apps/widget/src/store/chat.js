@@ -39,6 +39,10 @@ export const useChatStore = defineStore('chat', () => {
     }
     return []
   })
+  const supportSyncConversation = computed(() => userStore.isSupportSync
+    ? getConversations.value.find(({ status_category }) => status_category && status_category !== 'resolved')
+    : undefined
+  )
 
   const updateConversationListLastMessage = (
     conversationUUID,
@@ -280,6 +284,7 @@ export const useChatStore = defineStore('chat', () => {
     getCurrentConversationLastMessage,
     hasConversations,
     getConversations,
+    supportSyncConversation,
 
     addMessageToConversation,
     addPendingMessage,

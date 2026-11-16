@@ -1,5 +1,5 @@
 <template>
-  <Button v-if="canStartNewConversation" type="button" @click="startNewConversation">
+  <Button v-if="canOpenConversation" type="button" @click="openConversation">
     {{ label }}
     <ArrowRight v-if="arrow" size="16" aria-hidden="true" />
   </Button>
@@ -18,6 +18,9 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
-const { configuredLabel, canStartNewConversation, startNewConversation } = useStartConversation()
-const label = computed(() => configuredLabel.value || t(props.fallbackLabel))
+const { configuredLabel, ongoingConversation, canOpenConversation, openConversation } = useStartConversation()
+const label = computed(() => ongoingConversation.value
+  ? t('globals.messages.continueConversation')
+  : configuredLabel.value || t(props.fallbackLabel)
+)
 </script>

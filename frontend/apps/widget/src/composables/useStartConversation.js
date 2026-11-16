@@ -15,18 +15,27 @@ export function useStartConversation () {
   const configuredLabel = computed(() => audienceConfig.value?.start_conversation_button_text || '')
 
   // Mirrors the server check, else the button is shown and the send fails.
-  const canStartNewConversation = computed(() => {
+  const ongoingConversation = computed(() => chatStore.supportSyncConversation)
+
+  const canOpenConversation = computed(() => {
+    if (ongoingConversation.value) return true
     if (!audienceConfig.value?.allow_start_conversation) return false
     return (
       audienceConfig.value?.prevent_multiple_conversations !== true || !chatStore.hasConversations
     )
   })
 
-  const startNewConversation = () => {
+  const openConversation = async () => {
+    if (ongoingConversation.value) {
+      if (await chatStore.loadConversation(ongoingConversation.value.uuid)) {
+        widgetStore.navigateToChat()
+      }
+      return
+    }
     chatStore.setCurrentConversation(null)
     chatStore.clearMessages()
     widgetStore.navigateToChat()
   }
 
-  return { configuredLabel, canStartNewConversation, startNewConversation }
+  return { configuredLabel, ongoingConversation, canOpenConversation, openConversation }
 }

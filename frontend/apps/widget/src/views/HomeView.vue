@@ -60,11 +60,8 @@ const homeItems = computed(() =>
   (config.value.home_apps || []).filter((item) => item.type !== 'help' || help.available)
 )
 
-const mostRecentConversation = computed(() => {
-  const conversations = chatStore.getConversations
-  if (!conversations || conversations.length === 0) return null
-  // Get the most recent conversation (already sorted by last_message.created_at in the store)
-  return conversations[0]
-})
+const mostRecentConversation = computed(
+  () => chatStore.supportSyncConversation ?? chatStore.getConversations[0]
+)
 
 </script>
