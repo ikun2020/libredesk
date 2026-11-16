@@ -6,7 +6,13 @@
         <ChevronDown class="size-4" aria-hidden="true" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="start" class="w-64">
+    <DropdownMenuContent
+      side="top"
+      align="end"
+      :avoid-collisions="false"
+      :collision-padding="8"
+      class="w-64 max-w-[--radix-dropdown-menu-content-available-width]"
+    >
       <DropdownMenuLabel v-if="status" class="font-normal text-muted-foreground">
         {{ status }}
       </DropdownMenuLabel>

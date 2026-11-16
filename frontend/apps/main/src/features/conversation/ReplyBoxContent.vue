@@ -3,38 +3,36 @@
     class="reply-box-content flex min-h-0 flex-col h-full"
     :class="{ 'reply-box-content-inline max-h-[600px]': !isFullscreen }"
   >
-    <!-- Message type toggle -->
+    <!-- Message type and composer controls -->
     <div
-      class="reply-box-header flex shrink-0 items-center justify-between"
+      class="reply-box-header flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5"
       :class="{ 'mb-4': !isFullscreen, 'border-b border-border pb-4': isFullscreen }"
     >
-      <div class="flex min-w-0 flex-wrap items-center gap-1.5">
-        <Tabs v-model="messageType" class="rounded-lg">
-          <TabsList>
-            <TabsTrigger
-              v-if="canSendReply"
-              value="reply"
-              class="max-md:py-2.5"
-            >
-              {{ $t('globals.terms.reply') }}
-            </TabsTrigger>
-            <TabsTrigger
-              v-if="canSendPrivateNote"
-              value="private_note"
-              class="max-md:py-2.5"
-            >
-              {{ $t('globals.terms.privateNote') }}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <Tabs v-model="messageType" class="rounded-lg">
+        <TabsList>
+          <TabsTrigger
+            v-if="canSendReply"
+            value="reply"
+            class="max-md:py-2.5"
+          >
+            {{ $t('globals.terms.reply') }}
+          </TabsTrigger>
+          <TabsTrigger
+            v-if="canSendPrivateNote"
+            value="private_note"
+            class="max-md:py-2.5"
+          >
+            {{ $t('globals.terms.privateNote') }}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div class="ml-auto flex shrink-0 items-center gap-1">
         <QuickReplyMenu
           v-if="canSendReply && messageType === 'reply'"
           :key="conversationStore.current?.uuid"
           :disabled="isDraftLoading || isSending || isGenerating"
           @insert="insertEditorContent"
         />
-      </div>
-      <div class="flex shrink-0 items-center">
         <Button
           v-if="!isFullscreen"
           type="button"

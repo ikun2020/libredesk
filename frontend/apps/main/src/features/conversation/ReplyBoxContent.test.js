@@ -187,6 +187,7 @@ describe('quick send', () => {
       (button) => button.textContent.trim() === 'replyBox.quickSend'
     )
     trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    return trigger
   }
 
   beforeEach(() => {
@@ -200,10 +201,12 @@ describe('quick send', () => {
       actions: [{ type: 'set_status', value: ['Closed'] }]
     } } })
     await mount()
-    openQuickSend()
+    const trigger = openQuickSend()
+    expect(trigger.nextElementSibling.getAttribute('aria-label')).toBe('globals.terms.collapse')
 
     await vi.waitFor(() => {
       expect(document.querySelector('[role="menuitem"]')?.textContent.trim()).toBe('Payment follow-up')
+      expect(document.querySelector('[role="menu"]')?.dataset.side).toBe('top')
     })
     expect(searchMacros).toHaveBeenCalledWith({ view: 'replying', message_only: true })
     document.querySelector('[role="menuitem"]').click()
