@@ -37,7 +37,7 @@ vi.mock('@main/components/editor/ConversationEditor.vue', () => ({
   }
 }))
 vi.mock('@/features/conversation/ReplyBoxMenuBar.vue', () => ({
-  default: { render: () => null }
+  default: { render() { return this.$slots['before-send']?.() } }
 }))
 vi.mock('@/features/conversation/MacroActionsPreview.vue', () => ({
   default: { render: () => null }
@@ -69,6 +69,9 @@ const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
   props = reactive({
     isSending: false,
     uploadingFiles: [],
+    htmlContent: '',
+    textContent: '',
+    mentions: [],
     canSendReply: true,
     canSendPrivateNote: true,
     isDraftLoading,
@@ -77,7 +80,14 @@ const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
   host = document.createElement('div')
   document.body.append(host)
   app = createApp({
-    render: () => h(ReplyBoxContent, { ...props, onSend, ref: (value) => { instance = value } })
+    render: () => h(ReplyBoxContent, {
+      ...props,
+      onSend,
+      'onUpdate:htmlContent': (value) => { props.htmlContent = value },
+      'onUpdate:textContent': (value) => { props.textContent = value },
+      'onUpdate:mentions': (value) => { props.mentions = value },
+      ref: (value) => { instance = value }
+    })
   })
   app.config.globalProperties.$t = (key) => key
   app.mount(host)
@@ -181,6 +191,46 @@ describe('reply editor sending', () => {
   })
 })
 
+describe('clear message', () => {
+  const clearButton = () => Array.from(host.querySelectorAll('button')).find(
+    button => button.textContent.trim() === 'replyBox.clearMessage'
+  )
+
+  it('clears the current body and its mentions while preserving attachments', async () => {
+    await mount()
+    expect(clearButton().disabled).toBe(true)
+    props.htmlContent = '<p>Draft message</p>'
+    props.textContent = 'Draft message'
+    props.mentions = [{ id: 'agent-1', type: 'agent' }]
+    props.uploadedFiles = [{ uuid: 'file-1', filename: 'attachment.png' }]
+    await settle()
+    clearButton().click()
+    await settle()
+
+    expect(props.htmlContent).toBe('')
+    expect(props.textContent).toBe('')
+    expect(props.mentions).toEqual([])
+    expect(props.uploadedFiles.map(file => file.uuid)).toEqual(['file-1'])
+    expect(clearButton().disabled).toBe(true)
+    expect(editorFocus).toHaveBeenCalledTimes(2)
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('enables clearing an image-only body when the draft is ready', async () => {
+    await mount({ isDraftLoading: true })
+    props.htmlContent = '<img class="inline-image" src="/uploads/test.png">'
+    await settle()
+    expect(clearButton().disabled).toBe(true)
+
+    props.isDraftLoading = false
+    await settle()
+    expect(clearButton().disabled).toBe(false)
+    clearButton().click()
+    await settle()
+    expect(props.htmlContent).toBe('')
+  })
+})
+
 describe('quick send', () => {
   const openQuickSend = () => {
     const trigger = Array.from(host.querySelectorAll('button')).find(
@@ -217,6 +267,21 @@ describe('quick send', () => {
     })
     expect(getMacro).toHaveBeenCalledWith(1)
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('shows quick replies in their saved order', async () => {
+    searchMacros.mockResolvedValue({ data: { data: [
+      { id: 3, name: 'Pricing', usage_count: 0 },
+      { id: 1, name: 'Account help', usage_count: 5 }
+    ] } })
+    await mount()
+    openQuickSend()
+
+    await vi.waitFor(() => {
+      const labels = Array.from(document.querySelectorAll('[role="menuitem"]'),
+        (item) => item.textContent.trim())
+      expect(labels).toEqual(['Pricing', 'Account help'])
+    })
   })
 
   it('discards a quick reply that finishes loading after changing conversations', async () => {

@@ -132,6 +132,7 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	g.GET("/api/v1/macros/search", auth(handleSearchMacros))
 	g.GET("/api/v1/macros/{id}", auth(handleGetMacro))
 	g.POST("/api/v1/macros", perm(handleCreateMacro, "macros:manage"))
+	g.PUT("/api/v1/macros/order", perm(handleUpdateMacroOrder, "macros:manage"))
 	g.PUT("/api/v1/macros/{id}", perm(handleUpdateMacro, "macros:manage"))
 	g.DELETE("/api/v1/macros/{id}", perm(handleDeleteMacro, "macros:manage"))
 	g.POST("/api/v1/conversations/{uuid}/macros/{id}/apply", auth(handleApplyMacro))

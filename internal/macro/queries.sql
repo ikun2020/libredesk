@@ -48,12 +48,16 @@ SELECT
     user_id,
     team_id,
     usage_count
-FROM
-    macros
+FROM macros
+LEFT JOIN jsonb_array_elements_text(COALESCE(
+    (SELECT value FROM settings WHERE key = 'macros.order'), '[]'::jsonb
+)) WITH ORDINALITY AS macro_order(macro_id, position) ON macro_order.macro_id = macros.id::text
 WHERE
     ($1 = '' OR name ILIKE $4 ESCAPE '\')
 ORDER BY
-    updated_at DESC
+    macro_order.position NULLS LAST,
+    updated_at DESC,
+    id DESC
 LIMIT NULLIF($2, 0) OFFSET $3;
 
 -- name: search-compact
@@ -69,8 +73,10 @@ SELECT
     user_id,
     team_id,
     usage_count
-FROM
-    macros
+FROM macros
+LEFT JOIN jsonb_array_elements_text(COALESCE(
+    (SELECT value FROM settings WHERE key = 'macros.order' AND $6::boolean), '[]'::jsonb
+)) WITH ORDINALITY AS macro_order(macro_id, position) ON macro_order.macro_id = macros.id::text
 WHERE
     ($1 = '' OR name ILIKE $5 ESCAPE '\')
     AND ($2 = '' OR $2 = ANY(visible_when::text[]))
@@ -81,9 +87,18 @@ WHERE
         OR (visibility = 'team' AND team_id = ANY($4::bigint[]))
     )
 ORDER BY
-    usage_count DESC,
-    updated_at DESC
+    macro_order.position NULLS LAST,
+    CASE WHEN NOT $6::boolean THEN usage_count END DESC,
+    updated_at DESC,
+    id DESC
 LIMIT CASE WHEN $6::boolean THEN NULL ELSE 30 END;
+
+-- name: set-order
+INSERT INTO settings (key, value)
+SELECT 'macros.order', COALESCE(jsonb_agg(macros.id ORDER BY requested.position), '[]'::jsonb)
+FROM unnest($1::bigint[]) WITH ORDINALITY AS requested(macro_id, position)
+JOIN macros ON macros.id = requested.macro_id
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
 
 -- name: create
 INSERT INTO

@@ -362,6 +362,7 @@ const getTranscriptTemplate = () =>
   })
 const getContactPageVisits = (uuid) => http.get(`/api/v1/conversations/${uuid}/page-visits`, { abortOnRoute: true })
 const getMacrosCompact = (params) => http.get('/api/v1/macros/compact', { params })
+const updateMacroOrder = (ids) => http.put('/api/v1/macros/order', { ids })
 const searchMacros = (params) => http.get('/api/v1/macros/search', { params })
 const getMacro = (id) => http.get(`/api/v1/macros/${id}`)
 const createMacro = (data) =>
@@ -726,6 +727,7 @@ export default {
   getCurrentUser,
   getCurrentUserTeams,
   getMacrosCompact,
+  updateMacroOrder,
   searchMacros,
   getMacro,
   createMacro,

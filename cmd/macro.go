@@ -49,6 +49,21 @@ func handleGetMacrosCompact(r *fastglue.Request) error {
 	return r.SendEnvelope(macros)
 }
 
+// handleUpdateMacroOrder saves the workspace order for the macro list and Quick Send.
+func handleUpdateMacroOrder(r *fastglue.Request) error {
+	app := r.Context.(*App)
+	var order struct {
+		IDs []int `json:"ids"`
+	}
+	if err := r.Decode(&order, "json"); err != nil {
+		return sendErrorEnvelope(r, envelope.NewError(envelope.InputError, app.i18n.T("errors.parsingRequest"), nil))
+	}
+	if err := app.macro.SetOrder(order.IDs); err != nil {
+		return sendErrorEnvelope(r, err)
+	}
+	return r.SendEnvelope(true)
+}
+
 // handleSearchMacros returns a compact list of macros visible to the requesting agent.
 func handleSearchMacros(r *fastglue.Request) error {
 	var (

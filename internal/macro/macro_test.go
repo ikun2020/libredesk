@@ -3,6 +3,7 @@ package macro
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/abhinavxd/libredesk/internal/macro/models"
@@ -193,6 +194,88 @@ func TestSearchCompact(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestMacroOrder(t *testing.T) {
+	mgr, db := newTestManager(t)
+	var owner, other int
+	if err := db.Get(&owner, `INSERT INTO users (type, email, first_name) VALUES ('agent', 'owner@example.com', 'Owner') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Get(&other, `INSERT INTO users (type, email, first_name) VALUES ('agent', 'other@example.com', 'Other') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	first := mustCreate(t, mgr, "reply first", "<p>First</p>", "all", nil, nil, []string{"replying"})
+	second := mustCreate(t, mgr, "reply second", "<p>Second</p>", "all", nil, nil, []string{"replying"})
+	private := mustCreate(t, mgr, "reply private", "<p>Private</p>", "user", &other, nil, []string{"replying"})
+	note := mustCreate(t, mgr, "reply notes", "<p>Note</p>", "all", nil, nil, []string{"adding_private_note"})
+	deleted := mustCreate(t, mgr, "deleted", "<p>Deleted</p>", "all", nil, nil, []string{"replying"})
+	if err := mgr.Delete(deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.SetOrder([]int{private.ID, note.ID, first.ID, deleted.ID, second.ID}); err != nil {
+		t.Fatal(err)
+	}
+	newest := mustCreate(t, mgr, "reply new", "<p>New</p>", "all", nil, nil, []string{"replying"})
+
+	// A fresh manager sees the order saved in the database.
+	fresh, err := New(Opts{DB: db, Lo: mgr.lo, I18n: mgr.i18n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkOrder := func(macros []models.MacroCompact, err error, want ...int) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]int, 0, len(macros))
+		for _, macro := range macros {
+			ids = append(ids, macro.ID)
+		}
+		if !slices.Equal(ids, want) {
+			t.Fatalf("order %v, want %v", ids, want)
+		}
+	}
+	admin, err := fresh.GetAllCompact("", 1, 0)
+	checkOrder(admin, err, private.ID, note.ID, first.ID, second.ID, newest.ID)
+	page, err := fresh.GetAllCompact("reply", 2, 2)
+	checkOrder(page, err, first.ID, second.ID)
+	quick, err := fresh.SearchCompact("", "replying", owner, nil, true)
+	checkOrder(quick, err, first.ID, second.ID, newest.ID)
+	quick, err = fresh.SearchCompact("", "replying", other, nil, true)
+	checkOrder(quick, err, private.ID, first.ID, second.ID, newest.ID)
+
+	if err := fresh.IncrementUsageCount(second.ID); err != nil {
+		t.Fatal(err)
+	}
+	shortcuts, err := fresh.SearchCompact("", "replying", owner, nil, false)
+	checkOrder(shortcuts, err, second.ID, newest.ID, first.ID)
+	quick, err = fresh.SearchCompact("", "replying", owner, nil, true)
+	checkOrder(quick, err, first.ID, second.ID, newest.ID)
+	for _, bad := range [][]int{nil, {0}, {first.ID, first.ID}} {
+		if err := fresh.SetOrder(bad); err == nil {
+			t.Fatalf("order %v was accepted", bad)
+		}
+	}
+	var stored []byte
+	if err := db.Get(&stored, `SELECT value FROM settings WHERE key = 'macros.order'`); err != nil {
+		t.Fatal(err)
+	}
+	var ids []int
+	if err := json.Unmarshal(stored, &ids); err != nil || !slices.Equal(ids, []int{private.ID, note.ID, first.ID, second.ID}) {
+		t.Fatalf("stored order %s, error %v", stored, err)
+	}
+	macro, err := fresh.Get(first.ID)
+	if err != nil || !macro.UpdatedAt.Equal(first.UpdatedAt) || macro.MessageContent != first.MessageContent {
+		t.Fatalf("reordering changed the macro: %v, error %v", macro, err)
+	}
+	if err := fresh.SetOrder([]int{}); err != nil {
+		t.Fatal(err)
+	}
+	admin, err = fresh.GetAllCompact("", 1, 0)
+	checkOrder(admin, err, newest.ID, note.ID, private.ID, second.ID, first.ID)
+	quick, err = fresh.SearchCompact("", "replying", owner, nil, true)
+	checkOrder(quick, err, newest.ID, second.ID, first.ID)
 }
 
 func mustCreate(t *testing.T, mgr *Manager, name, content, visibility string, userID, teamID *int, visibleWhen []string) models.Macro {

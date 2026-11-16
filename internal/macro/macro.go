@@ -33,6 +33,7 @@ type queries struct {
 	GetAll         *sqlx.Stmt `query:"get-all"`
 	GetAllCompact  *sqlx.Stmt `query:"get-all-compact"`
 	SearchCompact  *sqlx.Stmt `query:"search-compact"`
+	SetOrder       *sqlx.Stmt `query:"set-order"`
 	Create         *sqlx.Stmt `query:"create"`
 	Update         *sqlx.Stmt `query:"update"`
 	Delete         *sqlx.Stmt `query:"delete"`
@@ -111,6 +112,25 @@ func (m *Manager) GetAllCompact(query string, page, pageSize int) ([]models.Macr
 		return nil, envelope.NewError(envelope.GeneralError, m.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
 	return macros, nil
+}
+
+// SetOrder saves the ordered IDs shared by the macro list and Quick Send.
+func (m *Manager) SetOrder(ids []int) error {
+	if ids == nil {
+		return envelope.NewError(envelope.InputError, m.i18n.T("errors.parsingRequest"), nil)
+	}
+	seen := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			return envelope.NewError(envelope.InputError, m.i18n.T("errors.parsingRequest"), nil)
+		}
+		seen[id] = true
+	}
+	if _, err := m.q.SetOrder.Exec(pq.Array(ids)); err != nil {
+		m.lo.Error("error saving macro order", "error", err)
+		return envelope.NewError(envelope.GeneralError, m.i18n.T("globals.messages.somethingWentWrong"), nil)
+	}
+	return nil
 }
 
 // SearchCompact returns up to 30 visible macros, or all visible macros with message content when messageOnly is true.
