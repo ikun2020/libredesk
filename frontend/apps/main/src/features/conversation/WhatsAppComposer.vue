@@ -163,6 +163,7 @@ const sendTemplate = async () => {
   const convUUID = conversationStore.current?.uuid
   if (!convUUID) return
 
+  const acknowledgeReplyRead = conversationStore.prepareReplyReadAcknowledgement(convUUID)
   try {
     isSending.value = true
     await api.sendMessage(convUUID, {
@@ -172,6 +173,7 @@ const sendTemplate = async () => {
       whatsapp_template_id: selectedTemplate.value.id,
       whatsapp_template_params: { ...templateParams }
     })
+    acknowledgeReplyRead?.()
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
       description: t('conversation.whatsapp.templateSent')
     })

@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { useThrottleFn } from '@vueuse/core'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { useEmitter } from '@main/composables/useEmitter'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents'
@@ -29,7 +30,7 @@ export const useNotificationStore = defineStore('notification', () => {
   )
 
   // Fetch notifications with pagination
-  const fetchNotifications = async (limit = 30, offset = 0, append = false) => {
+  const fetchNotifications = async (limit = 30, offset = 0, append = false, { silent = false } = {}) => {
     const request = ++notificationsRequest
     requestedEnd = offset + limit
     isLoading.value = true
@@ -52,7 +53,7 @@ export const useNotificationStore = defineStore('notification', () => {
 
       hasMore.value = data.length === limit
     } catch (error) {
-      if (request !== notificationsRequest) return
+      if (request !== notificationsRequest || silent) return
       emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
         variant: 'destructive',
         description: handleHTTPError(error).message
@@ -117,12 +118,13 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
-  const refresh = (reloadList) => {
+  const refresh = (reloadList, options) => {
     const stats = fetchStats()
     if (!reloadList) return stats
 
     const pendingEnd = isLoading.value ? requestedEnd : 0
-    return Promise.all([stats, fetchNotifications(Math.max(30, notifications.value.length, pendingEnd))])
+    const limit = Math.max(30, notifications.value.length, pendingEnd)
+    return Promise.all([stats, fetchNotifications(limit, 0, false, options)])
   }
 
   const refreshConversationRead = (uuid) =>
@@ -130,6 +132,8 @@ export const useNotificationStore = defineStore('notification', () => {
 
   // An alert can arrive after the conversation read, or already be included in a stats response.
   const refreshNewNotification = () => refresh(notificationsRequest > 0)
+  // Focus, visibility, and socket reconnection can fire together after resuming.
+  const refreshAfterResume = useThrottleFn(() => refresh(notificationsRequest > 0, { silent: true }), 500)
 
   // Mark all notifications as read
   const markAllAsRead = async () => {
@@ -202,6 +206,7 @@ export const useNotificationStore = defineStore('notification', () => {
     markAsRead,
     refreshConversationRead,
     refreshNewNotification,
+    refreshAfterResume,
     markAssignmentAsReadForConversation,
     markAllAsRead,
     deleteNotification,

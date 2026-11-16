@@ -196,9 +196,11 @@ watch([() => notificationStore.unreadCount, () => route.fullPath], ([count]) => 
   document.title = count > 0 ? `(${count}) ${base}` : base
 })
 
-useEventListener(document, 'visibilitychange', () => {
-  if (!document.hidden && navigator.setAppBadge) notificationStore.fetchStats()
-})
+const refreshNotificationsOnResume = () => {
+  if (!document.hidden && navigator.onLine !== false) notificationStore.refreshAfterResume()
+}
+useEventListener(document, 'visibilitychange', refreshNotificationsOnResume)
+useEventListener(window, 'focus', refreshNotificationsOnResume)
 
 initWS()
 useIdleDetection()

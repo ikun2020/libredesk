@@ -26,12 +26,13 @@ const (
 	pushPublicKeySetting  = "notification.push.vapid_public_key"
 	pushPrivateKeySetting = "notification.push.vapid_private_key"
 	pushTTL               = 86400
+	pushReplyTTL          = 60
 	pushReplyDelay        = 5 * time.Second
 	pushTitleRunes        = 100
 	pushBodyRunes         = 400
 )
 
-type pushSender func(context.Context, []byte, PushSubscription, string, string, string) (*http.Response, error)
+type pushSender func(context.Context, []byte, PushSubscription, string, string, string, int) (*http.Response, error)
 
 type pushDelivery struct {
 	UserID    int
@@ -89,8 +90,8 @@ func NewPushManager(opts PushManagerOpts) (*PushManager, error) {
 		concurrency: opts.Concurrency,
 	}
 	pushHTTPClient := newPushHTTPClient(opts.Lo)
-	m.sender = func(ctx context.Context, payload []byte, subscription PushSubscription, subject, publicKey, privateKey string) (*http.Response, error) {
-		return sendWebPush(ctx, payload, subscription, subject, publicKey, privateKey, pushHTTPClient)
+	m.sender = func(ctx context.Context, payload []byte, subscription PushSubscription, subject, publicKey, privateKey string, ttl int) (*http.Response, error) {
+		return sendWebPush(ctx, payload, subscription, subject, publicKey, privateKey, ttl, pushHTTPClient)
 	}
 	return m, nil
 }
@@ -192,8 +193,13 @@ func (m *PushManager) deliver(ctx context.Context, delivery pushDelivery) error 
 	if err != nil {
 		return err
 	}
+	ttl := pushTTL
+	if nmodels.IsReply(delivery.Reference.Type) {
+		// A read on another device cannot cancel a reply already held by the push service.
+		ttl = pushReplyTTL
+	}
 	for _, subscription := range subscriptions {
-		resp, err := m.sender(ctx, payload, subscription, m.subject, m.publicKey, m.privateKey)
+		resp, err := m.sender(ctx, payload, subscription, m.subject, m.publicKey, m.privateKey, ttl)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				m.lo.Error("push endpoint rejected notification", "subscription_id", subscription.ID, "error", err)
@@ -255,7 +261,7 @@ func readStringSetting(settings pushSettingStore, key string) (string, error) {
 	return value, nil
 }
 
-func sendWebPush(ctx context.Context, payload []byte, subscription PushSubscription, subject, publicKey, privateKey string, client *http.Client) (*http.Response, error) {
+func sendWebPush(ctx context.Context, payload []byte, subscription PushSubscription, subject, publicKey, privateKey string, ttl int, client *http.Client) (*http.Response, error) {
 	return webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{
 		Endpoint: subscription.Endpoint,
 		Keys: webpush.Keys{
@@ -267,7 +273,7 @@ func sendWebPush(ctx context.Context, payload []byte, subscription PushSubscript
 		Subscriber:      subject,
 		VAPIDPublicKey:  publicKey,
 		VAPIDPrivateKey: privateKey,
-		TTL:             pushTTL,
+		TTL:             ttl,
 	})
 }
 

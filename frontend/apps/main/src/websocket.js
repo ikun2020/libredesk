@@ -74,6 +74,7 @@ export class WebSocketClient {
       const openUUID = this.convStore.conversation.data?.uuid
       if (openUUID) this.subscribeToConversation(openUUID)
       this.convStore.refreshInboxAfterResume()
+      if (!document.hidden) this.notificationStore.refreshAfterResume()
     }
   }
 
@@ -110,11 +111,11 @@ export class WebSocketClient {
             })
           }
 
-          if (isFromContact && document.hidden) {
+          if (isFromContact && document.hidden && !this.convStore.isMessageAlreadyRead(uuid, data.data.created_at)) {
             if (isOpen || this.convStore.isConversationInList(uuid)) {
               playNotificationSound()
             } else {
-              this.convStore.addPendingNotification(uuid)
+              this.convStore.addPendingNotification(uuid, data.data.created_at)
             }
           }
 

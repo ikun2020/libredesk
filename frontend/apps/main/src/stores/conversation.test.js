@@ -6,6 +6,8 @@ import { useConversationStore } from './conversation'
 import { useUsersStore } from '@main/stores/users'
 import { useNotificationStore } from '@main/stores/notification'
 import { WebSocketClient } from '@main/websocket'
+import { playNotificationSound } from '@shared-ui/composables/useNotificationSound'
+import { CONVERSATION_LIST_TYPE } from '@main/constants/conversation'
 
 const { api } = vi.hoisted(() => ({ api: {
   getConversationMessage: vi.fn(), getConversationMessages: vi.fn(), updateAssigneeLastSeen: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock('@main/websocket', async importOriginal => ({
 }))
 vi.mock('@main/i18n', () => ({ getI18n: () => ({ global: { t: key => key } }) }))
 vi.mock('@shared-ui/utils/http.js', () => ({ handleHTTPError: error => error }))
+vi.mock('@shared-ui/composables/useNotificationSound', () => ({ playNotificationSound: vi.fn() }))
 
 const oldMessage = { id: 1, uuid: 'old-message', created_at: '2026-01-01T00:00:00Z', type: 'incoming' }
 const reply = { id: 2, uuid: 'new-reply', created_at: '2026-01-01T00:00:01Z', type: 'incoming', conversation_uuid: 'conversation-a' }
@@ -443,6 +446,30 @@ describe('outgoing reply confirmation', () => {
 })
 
 describe('conversation read state', () => {
+  it('acknowledges only the loaded history from before a successful reply', async () => {
+    const store = setup()
+    store.messages.data.addMessage('conversation-a', {
+      id: 0, uuid: 'pending-reply', created_at: activity.created_at
+    })
+    const acknowledgeReplyRead = store.prepareReplyReadAcknowledgement('conversation-a')
+    expect(api.updateAssigneeLastSeen).not.toHaveBeenCalled()
+
+    store.messages.data.addMessage('conversation-a', reply)
+    api.updateAssigneeLastSeen.mockResolvedValueOnce({ data: { data: {
+      conversation_uuid: 'conversation-a', last_seen_at: oldMessage.created_at, read_version: 1
+    } } })
+    await acknowledgeReplyRead()
+
+    expect(api.updateAssigneeLastSeen).toHaveBeenCalledExactlyOnceWith('conversation-a', oldMessage.uuid)
+    expect(store.conversations.data[0].unread_message_count).toBe(2)
+  })
+
+  it('does not prepare a reply acknowledgement across missing message history', () => {
+    const store = setup()
+    store.messages.pending.set('missing-reply', 'conversation-a')
+    expect(store.prepareReplyReadAcknowledgement('conversation-a')).toBeUndefined()
+  })
+
   it('blocks acknowledgements while an earlier reply body is still loading', async () => {
     const store = setup()
     let finish
@@ -511,6 +538,45 @@ describe('conversation read state', () => {
 
     expect(store.conversations.data[0].unread_message_count).toBe(0)
     expect(api.getConversationMessage).not.toHaveBeenCalled()
+  })
+
+  it('sounds only for a contact message newer than the read position synced from another device', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    try {
+      const store = setup()
+      store.applyConversationRead({ conversation_uuid: 'conversation-a', last_seen_at: reply.created_at, read_version: 1 })
+      const client = new WebSocketClient()
+      client.socket = {}
+      const deliver = (message) => client.handleMessage({ target: client.socket, data: JSON.stringify({
+        type: 'new_message', data: { ...message, conversation_uuid: 'conversation-a', sender_type: 'contact' }
+      }) })
+
+      deliver(reply)
+      expect(playNotificationSound).not.toHaveBeenCalled()
+      deliver({ ...activity, type: 'incoming' })
+      expect(playNotificationSound).toHaveBeenCalledOnce()
+    } finally {
+      hidden.mockRestore()
+    }
+  })
+
+  it.each([0, 1])('checks the current unread count before sounding a queued alert (%i unread)', async unreadCount => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    try {
+      const store = useConversationStore()
+      store.conversations.listType = CONVERSATION_LIST_TYPE.ALL
+      api.getAllConversations.mockResolvedValueOnce({ data: { data: {
+        results: [{ uuid: 'conversation-b', last_message_at: reply.created_at, unread_message_count: unreadCount }],
+        page: 1, total_pages: 1, total: 1
+      } } })
+      store.addPendingNotification('conversation-b', reply.created_at)
+
+      await store.fetchFirstPageConversations()
+
+      expect(playNotificationSound).toHaveBeenCalledTimes(unreadCount)
+    } finally {
+      hidden.mockRestore()
+    }
   })
 
   it('keeps the latest cutoff when read events arrive out of order', () => {

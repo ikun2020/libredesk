@@ -9,7 +9,7 @@ vi.mock('./stores/conversation', () => ({
     refreshInboxAfterResume: vi.fn()
   })
 }))
-vi.mock('./stores/notification', () => ({ useNotificationStore: () => ({}) }))
+vi.mock('./stores/notification', () => ({ useNotificationStore: () => ({ refreshAfterResume: vi.fn() }) }))
 vi.mock('./stores/users', () => ({ useUsersStore: () => ({}) }))
 vi.mock('./stores/user', () => ({ useUserStore: () => ({}) }))
 vi.mock('./stores/connection', () => ({
@@ -99,6 +99,7 @@ describe('receiving messages after resuming the inbox', () => {
       { type: 'conversation_subscribe', data: { conversation_uuid: 'open' } }
     ])
     expect(client.convStore.refreshInboxAfterResume).toHaveBeenCalledOnce()
+    expect(client.notificationStore.refreshAfterResume).toHaveBeenCalledOnce()
   })
 
   it('lets a pending handshake finish without sending a ping or restarting the connection', () => {

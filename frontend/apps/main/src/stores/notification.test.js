@@ -58,6 +58,25 @@ describe('app badge', () => {
 })
 
 describe('conversation read refresh', () => {
+  it('reconciles an open notification list and unread count after missing cross-device events', async () => {
+    const store = useNotificationStore()
+    const readOnPhone = notification(1, 'conversation-a')
+    const stillUnread = notification(2, 'conversation-b')
+    getNotifications.mockResolvedValueOnce({ data: { data: [stillUnread, readOnPhone] } })
+    getNotificationStats.mockResolvedValueOnce({ data: { data: { unread_count: 2, total_count: 2 } } })
+    await Promise.all([store.fetchNotifications(), store.fetchStats()])
+
+    getNotifications.mockResolvedValueOnce({ data: { data: [stillUnread, { ...readOnPhone, is_read: true }] } })
+    getNotificationStats.mockResolvedValueOnce({ data: { data: { unread_count: 1, total_count: 2 } } })
+    await Promise.all([store.refreshAfterResume(), store.refreshAfterResume()])
+
+    expect(store.unreadCount).toBe(1)
+    expect(store.unreadNotifications).toEqual([stillUnread])
+    expect(store.readNotifications).toEqual([{ ...readOnPhone, is_read: true }])
+    expect(getNotifications).toHaveBeenCalledTimes(2)
+    expect(getNotificationStats).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps a late live alert read when the server has already recorded the read', async () => {
     const store = useNotificationStore()
     const readAlert = notification(1, 'conversation-a', true)

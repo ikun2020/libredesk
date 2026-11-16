@@ -421,9 +421,13 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
+  function isMessageAlreadyRead (uuid, createdAt) {
+    return Date.parse(createdAt) <= Date.parse(readStates.get(uuid)?.last_seen_at)
+  }
+
   function incrementUnread (uuid, createdAt) {
     const row = conversations.data.find(c => c.uuid === uuid)
-    if (!row || Date.parse(createdAt) <= Date.parse(readStates.get(uuid)?.last_seen_at)) return
+    if (!row || isMessageAlreadyRead(uuid, createdAt)) return
     row.unread_message_count = Math.min((row.unread_message_count || 0) + 1, 10)
   }
 
@@ -680,8 +684,10 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   function refreshInboxAfterResume () {
+    if (document.hidden) return
+    pendingNotifications.clear()
     const { name, params } = router.currentRoute.value
-    if (document.hidden || !/^(?:(?:team|view)-)?inbox(?:-conversation)?$/.test(String(name))) return
+    if (!/^(?:(?:team|view)-)?inbox(?:-conversation)?$/.test(String(name))) return
     if (!conversations.fetching) fetchFirstPageConversations()
     if (params.uuid) refreshOpenMessages(params.uuid)
   }
@@ -879,18 +885,18 @@ export const useConversationStore = defineStore('conversation', () => {
     const openRow = apiResponse.results.find(row => row.uuid === openUUID)
     if (openRow && hasNewerMessages(openUUID, openRow.last_message_at)) refreshOpenMessages(openUUID)
 
-    // Re-check document.hidden in case the user returned while the refresh was in flight.
-    if (pendingNotificationUUIDs.size > 0) {
-      let shouldPlay = false
-      for (const uuid of pendingNotificationUUIDs) {
-        if (isConversationInList(uuid)) {
-          shouldPlay = true
-        }
-      }
-      pendingNotificationUUIDs.clear()
-      if (shouldPlay && document.hidden) {
+    if (pendingNotifications.size > 0) {
+      // Use the current server result to avoid playing a notification that was
+      // read on another device while the conversation was outside this list.
+      if (document.hidden && apiResponse.results.some(row => {
+        const createdAt = pendingNotifications.get(row.uuid)
+        return createdAt && row.unread_message_count > 0 &&
+          Date.parse(row.last_message_at) >= Date.parse(createdAt) &&
+          !isMessageAlreadyRead(row.uuid, createdAt)
+      })) {
         playNotificationSound()
       }
+      pendingNotifications.clear()
     }
   }
 
@@ -1005,20 +1011,31 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
-  async function updateAssigneeLastSeen (uuid, messageUUID) {
-    if (!isViewingConversation(uuid)) return
+  async function saveConversationRead (uuid, messageUUID) {
     const response = await api.updateAssigneeLastSeen(uuid, messageUUID)
     applyConversationRead(response.data.data)
+  }
+
+  function updateAssigneeLastSeen (uuid, messageUUID) {
+    if (isViewingConversation(uuid)) return saveConversationRead(uuid, messageUUID)
+  }
+
+  function prepareReplyReadAcknowledgement (uuid) {
+    if (!isViewingConversation(uuid) || conversation.data?.uuid !== uuid || hasPendingMessages.value) return
+    // Capture the known history before sending. An incoming reply during the send must stay unread.
+    const messageUUID = conversationMessages.value.findLast(message => message.id > 0)?.uuid
+    if (messageUUID) return () => saveConversationRead(uuid, messageUUID).catch(() => {})
   }
 
   function isConversationInList (uuid) {
     return Boolean(conversations.data?.find(c => c.uuid === uuid))
   }
 
-  const pendingNotificationUUIDs = new Set()
+  const pendingNotifications = new Map()
 
-  function addPendingNotification (uuid) {
-    pendingNotificationUUIDs.add(uuid)
+  function addPendingNotification (uuid, createdAt) {
+    const previous = pendingNotifications.get(uuid)
+    if (!previous || Date.parse(createdAt) > Date.parse(previous)) pendingNotifications.set(uuid, createdAt)
   }
 
   // trailing=true: fires one final refresh after a burst so the list converges to latest state.
@@ -1303,7 +1320,7 @@ export const useConversationStore = defineStore('conversation', () => {
     conversations.hasMore = false
     conversations.total = 0
     contextSeq++
-    pendingNotificationUUIDs.clear()
+    pendingNotifications.clear()
     clearSelection()
   }
 
@@ -1468,6 +1485,7 @@ export const useConversationStore = defineStore('conversation', () => {
     currentFrom,
     currentFromOptions,
     isConversationInList,
+    isMessageAlreadyRead,
     addPendingNotification,
     mergeConversationUpdate,
     handleConvPush,
@@ -1479,6 +1497,7 @@ export const useConversationStore = defineStore('conversation', () => {
     fetchNextConversations,
     mergeMessageUpdate,
     updateAssigneeLastSeen,
+    prepareReplyReadAcknowledgement,
     applyConversationRead,
     markAsUnread,
     incrementUnread,
