@@ -34,43 +34,25 @@
         </TooltipTrigger>
         <TooltipContent>{{ $t('globals.messages.attachFile') }}</TooltipContent>
       </Tooltip>
-      <Popover v-model:open="isEmojiPickerVisible">
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <PopoverTrigger as-child>
-              <Button
-                type="button"
-                :class="[ICON_BUTTON_CLASS, 'data-[state=open]:bg-muted']"
-                variant="outline"
-                :aria-label="$t('globals.messages.addEmoji')"
-              >
-                <Smile class="size-4" aria-hidden="true" />
-              </Button>
-            </PopoverTrigger>
-          </TooltipTrigger>
-          <TooltipContent>{{ $t('globals.messages.addEmoji') }}</TooltipContent>
-        </Tooltip>
-        <PopoverContent
-          side="top"
-          align="start"
-          :side-offset="8"
-          class="w-80 max-w-[calc(100vw-1rem)] max-h-[min(16rem,var(--radix-popover-content-available-height))] p-2"
-          :aria-label="$t('globals.messages.addEmoji')"
-        >
-          <div class="grid grid-cols-8 gap-0.5">
-            <Button
-              v-for="emoji in FACE_EMOJIS"
-              :key="emoji"
-              type="button"
-              variant="ghost"
-              class="h-9 min-w-0 p-0 text-xl leading-none"
-              @click="onSelectEmoji(emoji)"
-            >
-              {{ emoji }}
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
+      <FaceEmojiPicker @select="emit('emojiSelect', $event)">
+        <template #trigger>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <PopoverTrigger as-child>
+                <Button
+                  type="button"
+                  :class="[ICON_BUTTON_CLASS, 'data-[state=open]:bg-muted']"
+                  variant="outline"
+                  :aria-label="$t('globals.messages.addEmoji')"
+                >
+                  <Smile class="size-4" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{{ $t('globals.messages.addEmoji') }}</TooltipContent>
+          </Tooltip>
+        </template>
+      </FaceEmojiPicker>
       <Tooltip>
         <TooltipTrigger as-child>
           <Toggle
@@ -160,7 +142,8 @@ import { ref, computed } from 'vue'
 import { Button } from '@shared-ui/components/ui/button'
 import { Toggle } from '@shared-ui/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
-import { Popover, PopoverContent, PopoverTrigger } from '@shared-ui/components/ui/popover'
+import { PopoverTrigger } from '@shared-ui/components/ui/popover'
+import FaceEmojiPicker from '@shared-ui/components/FaceEmojiPicker.vue'
 import { Paperclip, Smile, Zap, ChevronDownIcon, Sparkles, Loader2 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -176,23 +159,7 @@ import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { WHATSAPP_MEDIA_ACCEPT } from '@main/features/conversation/whatsappMedia'
 import { MACROS_COMMAND, useCommandPalette } from '@main/features/command/useCommandPalette'
 
-// The original picker’s face section, ending at the red goblin.
-const FACE_EMOJIS = [
-  '😀', '😁', '😂', '🤣', '😃', '😄', '😅', '😆',
-  '😉', '😊', '😋', '😎', '😍', '😘', '😗', '😙',
-  '😚', '☺️', '🙂', '🤗', '🤩', '🤔', '🤨', '😐',
-  '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐',
-  '😯', '😪', '😫', '😴', '😌', '😛', '😜', '😝',
-  '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲',
-  '☹️', '🙁', '😖', '😞', '😟', '😤', '😢', '😭',
-  '😦', '😧', '😨', '😩', '🤯', '😬', '😰', '😱',
-  '😳', '🤪', '😵', '😡', '😠', '🤬', '😷', '🤒',
-  '🤕', '🤢', '🤮', '🤧', '😇', '🤠', '🤡', '🤥',
-  '🤫', '🤭', '🧐', '🤓', '😈', '👿', '👹', '👺',
-]
-
 const attachmentInput = ref(null)
-const isEmojiPickerVisible = ref(false)
 const emit = defineEmits(['emojiSelect', 'generateReply'])
 
 const props = defineProps({
@@ -236,9 +203,5 @@ const openMacroPicker = () => {
 
 const openTemplatePicker = () => {
   emitter.emit(EMITTER_EVENTS.WHATSAPP_TEMPLATE_PICKER_OPEN)
-}
-
-function onSelectEmoji(emoji) {
-  emit('emojiSelect', emoji)
 }
 </script>
