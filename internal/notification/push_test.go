@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,7 +74,7 @@ func TestPushManagerDeliverSendsEverySubscription(t *testing.T) {
 		publicKey:  "public",
 		privateKey: "private",
 		subject:    "https://desk.example",
-		sender: func(_ context.Context, payload []byte, subscription PushSubscription, _, _, _ string, _ int) (*http.Response, error) {
+		sender: func(_ context.Context, payload []byte, subscription PushSubscription, _, _, _ string) (*http.Response, error) {
 			if !strings.Contains(string(payload), `"url":"/inboxes/assigned/conversation/conv-1?scrollTo=msg-1"`) {
 				t.Fatalf("unexpected payload: %s", payload)
 			}
@@ -97,63 +96,6 @@ func TestPushManagerDeliverSendsEverySubscription(t *testing.T) {
 	}
 }
 
-type pushTestTransport func(*http.Request) (*http.Response, error)
-
-func (f pushTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-func TestPushManagerSendsShorterTTLForReplies(t *testing.T) {
-	privateKey, publicKey, err := loadVAPIDKeys(&fakePushSettings{values: map[string]string{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := &fakePushStore{subscriptions: []PushSubscription{{
-		ID:       1,
-		Endpoint: "https://push.example/subscription",
-		P256DH:   publicKey,
-		Auth:     base64.RawURLEncoding.EncodeToString(make([]byte, 16)),
-	}}}
-	checker := &replyDeliveryStub{}
-	checker.allowed.Store(true)
-	lo := logf.New(logf.Opts{})
-
-	for _, tt := range []struct {
-		notificationType nmodels.NotificationType
-		wantTTL          string
-	}{
-		{nmodels.NotificationTypeNewReply, "60"},
-		{nmodels.NotificationTypeNewReplyParticipating, "60"},
-		{nmodels.NotificationTypeMention, "86400"},
-		{nmodels.NotificationTypeAssignment, "86400"},
-	} {
-		t.Run(string(tt.notificationType), func(t *testing.T) {
-			var gotTTL string
-			client := &http.Client{Transport: pushTestTransport(func(req *http.Request) (*http.Response, error) {
-				gotTTL = req.Header.Get("TTL")
-				return &http.Response{StatusCode: http.StatusCreated, Body: http.NoBody}, nil
-			})}
-			manager := &PushManager{
-				store: store, checker: checker, lo: &lo,
-				subject: "https://desk.example", publicKey: publicKey, privateKey: privateKey,
-				sender: func(ctx context.Context, payload []byte, subscription PushSubscription, subject, publicKey, privateKey string, ttl int) (*http.Response, error) {
-					return sendWebPush(ctx, payload, subscription, subject, publicKey, privateKey, ttl, client)
-				},
-			}
-			if err := manager.deliver(t.Context(), pushDelivery{
-				UserID:    7,
-				Payload:   nmodels.PushPayload{Title: "Notification"},
-				Reference: nmodels.NotificationReference{Type: tt.notificationType},
-			}); err != nil {
-				t.Fatal(err)
-			}
-			if gotTTL != tt.wantTTL {
-				t.Fatalf("TTL header = %q, want %q", gotTTL, tt.wantTTL)
-			}
-		})
-	}
-}
-
 func TestPushManagerDeliverBoundsPreview(t *testing.T) {
 	for _, content := range []string{"", "Short note", strings.Repeat("a", 100), strings.Repeat("a", 101), strings.Repeat("a", 400), strings.Repeat("a", 401), strings.Repeat("a", 10000), strings.Repeat("世界🙂", 2000), strings.Repeat("<&>\x00\"\\", 2000), strings.Repeat("\x00", 2000)} {
 		t.Run(fmt.Sprintf("bytes_%d", len(content)), func(t *testing.T) {
@@ -162,7 +104,7 @@ func TestPushManagerDeliverBoundsPreview(t *testing.T) {
 			m := &PushManager{
 				store:   &fakePushStore{subscriptions: []PushSubscription{{ID: 1}}},
 				checker: &replyDeliveryStub{},
-				sender: func(_ context.Context, payload []byte, _ PushSubscription, _, _, _ string, _ int) (*http.Response, error) {
+				sender: func(_ context.Context, payload []byte, _ PushSubscription, _, _, _ string) (*http.Response, error) {
 					called = true
 					if len(payload) > 3993 {
 						t.Fatalf("payload has %d bytes, exceeds Web Push capacity", len(payload))
@@ -200,7 +142,7 @@ func TestPushManagerDeliverDeletesExpiredSubscription(t *testing.T) {
 	m := &PushManager{
 		store:   store,
 		checker: &replyDeliveryStub{},
-		sender: func(context.Context, []byte, PushSubscription, string, string, string, int) (*http.Response, error) {
+		sender: func(context.Context, []byte, PushSubscription, string, string, string) (*http.Response, error) {
 			return &http.Response{StatusCode: http.StatusGone, Body: io.NopCloser(strings.NewReader(""))}, nil
 		},
 	}
@@ -312,7 +254,7 @@ func TestReplyPushWaitsAndRechecksWithoutDelayingMentions(t *testing.T) {
 			store: &fakePushStore{subscriptions: []PushSubscription{{ID: 1}}},
 			lo:    &lo, publicKey: "public", privateKey: "private", concurrency: 1,
 			queue: make(chan pushDelivery, 2), checker: checker,
-			sender: func(_ context.Context, payload []byte, _ PushSubscription, _, _, _ string, _ int) (*http.Response, error) {
+			sender: func(_ context.Context, payload []byte, _ PushSubscription, _, _, _ string) (*http.Response, error) {
 				var p nmodels.PushPayload
 				if err := json.Unmarshal(payload, &p); err != nil {
 					return nil, err

@@ -575,7 +575,6 @@ const processSend = async (
 
   // Add pending message to cache for instant display.
   if (hasContent) {
-    const acknowledgeReplyRead = isPrivate ? null : conversationStore.prepareReplyReadAcknowledgement(convUUID)
     const savedContent = htmlContent.value
     const author = {
       id: userStore.userID,
@@ -652,7 +651,6 @@ const processSend = async (
         if (response?.data?.data?.uuid) {
           conversationStore.replacePendingMessage(convUUID, tempUUIDs[i], response.data.data)
         }
-        if (i === 0) acknowledgeReplyRead?.()
       } catch (error) {
         hasMessageSendingErrored = true
         // Drop the bubbles for everything still unsent. Parts already accepted stay in the timeline.

@@ -111,11 +111,11 @@ export class WebSocketClient {
             })
           }
 
-          if (isFromContact && document.hidden && !this.convStore.isMessageAlreadyRead(uuid, data.data.created_at)) {
+          if (isFromContact && document.hidden) {
             if (isOpen || this.convStore.isConversationInList(uuid)) {
               playNotificationSound()
             } else {
-              this.convStore.addPendingNotification(uuid, data.data.created_at)
+              this.convStore.addPendingNotification(uuid)
             }
           }
 
