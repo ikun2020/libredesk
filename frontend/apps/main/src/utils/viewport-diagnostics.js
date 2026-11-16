@@ -1,5 +1,3 @@
-import { createDuoPwaRecovery } from './duo-pwa-recovery'
-
 const HISTORY_LIMIT = 24
 const SAMPLE_INTERVAL = 150
 const RECT_FIELDS = ['x', 'y', 'top', 'right', 'bottom', 'left', 'width', 'height']
@@ -17,7 +15,7 @@ const isEditable = element => Boolean(element?.matches('input, textarea, select,
 
 // Opt-in and memory-only. Capture geometry, never page text, URLs, account data,
 // storage or arbitrary attributes. Recording itself never changes the viewport.
-export function createViewportRecorder ({ win = window, version = '', onRecoveryChange = () => {} } = {}) {
+export function createViewportRecorder ({ win = window, version = '' } = {}) {
   const doc = win.document
   let active = false
   let report = null
@@ -31,8 +29,6 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
   let lastVisible = null
   let hasBackgrounded = false
   let recalculation = null
-  let duoRecovery = null
-  let unitProbes = []
 
   const snapshot = reason => {
     const element = node => {
@@ -71,7 +67,6 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
         top: safeStyle.paddingTop, right: safeStyle.paddingRight,
         bottom: safeStyle.paddingBottom, left: safeStyle.paddingLeft
       } : null,
-      viewportUnits: Object.fromEntries(unitProbes.map(({ unit, node }) => [unit, number(node.getBoundingClientRect().height)])),
       viewportHeight: win.getComputedStyle(doc.documentElement).getPropertyValue('--visual-viewport-height').trim(),
       viewportPageTop: win.getComputedStyle(doc.documentElement).getPropertyValue('--visual-viewport-page-top').trim(),
       editableFocused: isEditable(focused)
@@ -81,7 +76,7 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
   const capture = (reason = 'manual') => {
     if (!active) return
     // Callers supply fixed action names; do not accept arbitrary text as metadata.
-    const label = /^(?:(manual|copy|download|export|start|stop|freeze|baseline|hidden|visible|pageshow|orientationchange|resize|focus|viewport-resize|viewport-scroll)(:(frame|250ms|1000ms|2000ms))?|viewport-recalculate:(before|requested|restored|after)|duo-recovery:(before|during|restored|after))$/.test(reason)
+    const label = /^(?:(manual|copy|download|export|start|stop|freeze|baseline|hidden|visible|pageshow|orientationchange|resize|focus|viewport-resize|viewport-scroll)(:(frame|250ms|1000ms|2000ms))?|viewport-recalculate:(before|requested|restored|after))$/.test(reason)
       ? reason : 'manual'
     const sample = snapshot(label)
     if (!sample.hidden) {
@@ -175,7 +170,6 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
   // exact metadata. The browser may ignore this; only the report can show its effect.
   const recalculateViewport = () => {
     if (!active) return false
-    if (duoRecovery?.getReport().enabled) return rejectRecalculation('auto-recovery-enabled')
     if (recalculation) return rejectRecalculation('busy')
     if (doc.hidden) return rejectRecalculation('hidden')
     if (isEditable(doc.activeElement)) return rejectRecalculation('editing')
@@ -253,7 +247,6 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
   }
 
   const stop = () => {
-    duoRecovery?.stop()
     cancelRecalculation()
     active = false
     cancelPending()
@@ -261,8 +254,6 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
     listeners = []
     probe?.remove()
     probe = null
-    unitProbes.forEach(({ node }) => node.remove())
-    unitProbes = []
   }
 
   const start = () => {
@@ -275,20 +266,12 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
     probe.setAttribute('aria-hidden', 'true')
     probe.style.cssText = 'position:fixed;inset:0 auto auto 0;width:0;height:0;box-sizing:border-box;visibility:hidden;pointer-events:none;overflow:hidden;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'
     doc.body.append(probe)
-    unitProbes = ['dvh', 'svh', 'lvh'].map(unit => {
-      const node = doc.createElement('div')
-      node.setAttribute('aria-hidden', 'true')
-      node.style.cssText = `position:fixed;top:0;left:0;width:0;height:100${unit};visibility:hidden;pointer-events:none;overflow:hidden`
-      probe.append(node)
-      return { unit, node }
-    })
     active = true
     report = {
       schema: 1, version: String(version), userAgent: win.navigator.userAgent,
       baseline: snapshot('baseline'), settledBaseline: null, beforeBackground: null,
       viewportRecalculation: null, lastViewportRecalculationAttempt: null, samples: []
     }
-    duoRecovery = createDuoPwaRecovery({ win, capture, onChange: onRecoveryChange })
     if (!report.baseline.hidden) lastVisible = report.baseline
     listen(doc, 'visibilitychange', () => {
       if (doc.hidden) {
@@ -322,13 +305,6 @@ export function createViewportRecorder ({ win = window, version = '', onRecovery
     stop,
     capture,
     recalculateViewport,
-    isDuoRecoverySupported: () => duoRecovery?.isSupported() || false,
-    startDuoRecovery: () => {
-      if (!active) return false
-      cancelRecalculation()
-      return duoRecovery.start()
-    },
-    stopDuoRecovery: () => duoRecovery?.stop(),
-    exportReport: () => JSON.stringify(report && { ...report, duoRecovery: duoRecovery?.getReport() ?? null }, null, 2)
+    exportReport: () => JSON.stringify(report, null, 2)
   }
 }
