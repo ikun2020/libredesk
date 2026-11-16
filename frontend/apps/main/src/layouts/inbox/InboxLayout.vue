@@ -4,6 +4,7 @@
     ref="panelGroupRef"
     direction="horizontal"
     class="h-full min-h-0 w-full"
+    :class="{ 'duo-inbox gap-2': duoSplit }"
     @layout="onLayoutChange"
   >
     <!-- Conversation List Panel -->
@@ -27,13 +28,15 @@
     <!-- v-show, not v-if: the list keeps its scroll position. -->
     <ConversationList
       v-if="isMobile"
-      v-show="isListRoute"
-      class="h-full w-full overflow-hidden rounded-xl border border-border bg-background"
+      v-show="isListRoute || duoSplit"
+      class="h-full overflow-hidden rounded-xl border border-border bg-background"
+      :class="duoSplit ? 'duo-inbox-list' : 'w-full'"
+      :duo="duoSplit"
     />
 
     <!-- Conversation Detail Panel -->
     <ResizablePanel
-      v-show="!isMobile || !isListRoute"
+      v-show="!isMobile || !isListRoute || duoSplit"
       :order="2"
       :min-size="isMobile ? 100 : 30"
       class="min-w-0"
@@ -53,6 +56,7 @@ import { useRoute } from 'vue-router'
 import { useElementSize, useStorage } from '@vueuse/core'
 import ConversationList from '@/features/conversation/list/ConversationList.vue'
 import { useIsMobile } from '@shared-ui/composables'
+import { useIPhoneDuoInbox } from '@main/composables/useIPhoneDuoInbox'
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -63,6 +67,7 @@ defineOptions({ name: 'InboxLayout' })
 
 const route = useRoute()
 const isMobile = useIsMobile()
+const duoSplit = useIPhoneDuoInbox()
 const isSearchRoute = computed(() => route.name === 'search')
 const panelGroupRef = ref(null)
 const { width: panelGroupWidth } = useElementSize(panelGroupRef)
@@ -80,3 +85,10 @@ const onLayoutChange = (sizes) => {
   if (sizes.length === 2) panelSizes.value = sizes
 }
 </script>
+
+<style scoped>
+.duo-inbox-list {
+  flex: 0 0 36%;
+  min-width: 0;
+}
+</style>

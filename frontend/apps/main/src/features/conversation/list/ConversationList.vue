@@ -1,9 +1,41 @@
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- Header -->
-    <div class="flex h-14 shrink-0 items-center gap-3 border-b border-border px-3">
-      <SidebarTrigger class="cursor-pointer" />
-      <h1 class="ui-heading min-w-0 truncate" :title="title">{{ title }}</h1>
+    <div
+      class="shrink-0 items-center px-3"
+      :class="duo
+        ? 'grid grid-cols-[1fr_auto] gap-2 pb-2 pt-3'
+        : 'flex h-14 gap-3 border-b border-border'"
+    >
+      <SidebarTrigger
+        class="cursor-pointer"
+        :class="{ 'rounded-full border border-border': duo }"
+      />
+      <h1
+        class="ui-heading min-w-0 truncate"
+        :class="{ 'col-span-2 row-start-2 text-2xl font-bold': duo }"
+        :title="title"
+      >
+        {{ title }}
+      </h1>
+      <div v-if="duo" class="col-start-2 row-start-1 flex items-center gap-2">
+        <Button variant="outline" size="icon" class="size-11 rounded-full" as-child>
+          <router-link :to="{ name: 'search' }" :aria-label="t('globals.terms.search')">
+            <Search class="size-4" aria-hidden="true" />
+          </router-link>
+        </Button>
+        <Button
+          v-if="userStore.can(permissions.CONVERSATIONS_WRITE)"
+          type="button"
+          variant="outline"
+          size="icon"
+          class="size-11 rounded-full"
+          :aria-label="t('conversation.newConversation')"
+          @click="emitter.emit(EMITTER_EVENTS.OPEN_CREATE_CONVERSATION, {})"
+        >
+          <Plus class="size-4" aria-hidden="true" />
+        </Button>
+      </div>
     </div>
 
     <!-- Bulk Action Toolbar (when items selected) -->
@@ -96,8 +128,9 @@
 
       <div
         v-if="!hasErrored && !conversationStore.conversations.loading"
-        class="divide-y divide-border"
-        :class="{ 'border-b border-border': hasConversations }"
+        :class="duo
+          ? 'space-y-1 px-2 py-1'
+          : ['divide-y divide-border', { 'border-b border-border': hasConversations }]"
       >
         <ConversationListItem
           v-for="conversation in conversationStore.conversationsList"
@@ -105,6 +138,7 @@
           :conversation="conversation"
           :currentConversation="conversationStore.current"
           :contactFullName="conversationStore.getContactFullName(conversation.uuid)"
+          :duo="duo"
           class="transition-colors duration-200"
         />
       </div>
@@ -156,7 +190,7 @@ const FILTER_TRIGGER_CLASS = 'min-w-0 justify-start gap-1.5 px-2 text-xs'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Inbox, MessageCircleWarning, ChevronDown, Loader2 } from 'lucide-vue-next'
+import { Inbox, MessageCircleWarning, ChevronDown, Loader2, Plus, Search } from 'lucide-vue-next'
 import { Button } from '@shared-ui/components/ui/button'
 import {
   DropdownMenu,
@@ -167,14 +201,22 @@ import {
 import { SidebarTrigger } from '@shared-ui/components/ui/sidebar'
 import { useConversationStore } from '@/stores/conversation'
 import { useTeamStore } from '@/stores/team'
+import { useUserStore } from '@main/stores/user'
+import { useEmitter } from '@main/composables/useEmitter'
+import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
+import { permissions } from '@main/constants/permissions'
 import { useBulkActionPermissions } from '@/composables/useBulkActionPermissions'
 import EmptyList from '@/features/conversation/list/ConversationEmptyList.vue'
 import ConversationBulkActionToolbar from '@/features/conversation/list/ConversationBulkActionToolbar.vue'
 import ConversationListItem from '@/features/conversation/list/ConversationListItem.vue'
 import ConversationListItemSkeleton from '@/features/conversation/list/ConversationListItemSkeleton.vue'
 
+defineProps({ duo: Boolean })
+
 const conversationStore = useConversationStore()
 const teamStore = useTeamStore()
+const userStore = useUserStore()
+const emitter = useEmitter()
 const { canBulkAct } = useBulkActionPermissions()
 const route = useRoute()
 const { t } = useI18n()

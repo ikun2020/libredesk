@@ -6,6 +6,7 @@
         :aria-current="isCurrent ? 'page' : undefined"
         class="group relative block cursor-pointer px-3 py-3 transition-colors duration-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         :class="{
+          'overflow-hidden rounded-xl': duo,
           'bg-accent before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-r before:bg-primary': isCurrent,
           'bg-primary/5 can-hover:hover:bg-primary/10': isItemSelected && !isCurrent,
           'can-hover:hover:bg-accent/40': !isCurrent && !isItemSelected
@@ -128,8 +129,11 @@
             <!-- Message preview + unread count -->
             <div class="flex items-center justify-between gap-2">
               <p
-                class="text-sm flex-1 min-w-0 truncate"
-                :class="isUnread ? 'text-foreground font-medium' : 'text-muted-foreground'"
+                class="text-sm flex-1 min-w-0"
+                :class="[
+                  duo ? 'line-clamp-2 break-words' : 'truncate',
+                  isUnread ? 'text-foreground font-medium' : 'text-muted-foreground'
+                ]"
               >
                 <template v-if="isTyping">
                   <span class="italic text-foreground">{{ $t('globals.terms.typing') }}</span>
@@ -231,7 +235,8 @@ const { t } = useI18n()
 const props = defineProps({
   conversation: Object,
   currentConversation: Object,
-  contactFullName: String
+  contactFullName: String,
+  duo: Boolean
 })
 
 const handleMarkAsUnread = () => {
