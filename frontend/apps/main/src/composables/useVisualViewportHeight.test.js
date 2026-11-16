@@ -24,6 +24,19 @@ const standaloneTouch = () => {
   }))
 }
 
+const unfoldedDuo = () => {
+  standaloneTouch()
+  vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)' })
+  vi.stubGlobal('screen', { width: 466, height: 678 })
+  vi.stubGlobal('devicePixelRatio', 3)
+  vi.stubGlobal('innerWidth', 867)
+  vi.stubGlobal('innerHeight', 669)
+  vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(867)
+  const layoutHeight = vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(669)
+  const viewport = mockViewport({ width: 867, height: 669, pageTop: 0, offsetTop: 0, offsetLeft: 0 })
+  return { viewport, layoutHeight }
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
@@ -59,6 +72,89 @@ afterEach(() => {
 })
 
 describe('visual viewport height', () => {
+  it.each([false, true])('keeps the unfolded Duo shell usable for a short viewport sample (focused: %s)', focused => {
+    const { viewport } = unfoldedDuo()
+    mount()
+    const input = document.createElement('textarea')
+    input.value = 'Unsent reply'
+    host.querySelector('.app-shell').append(input)
+    if (focused) input.focus()
+
+    // A new viewport event can arrive after the foreground remeasurement timers.
+    vi.advanceTimersByTime(1000)
+    Object.assign(viewport, { height: 83, pageTop: 82, offsetTop: 82 })
+    viewport.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('669px')
+    expect(pageTop()).toBe('0px')
+    if (focused) expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('Unsent reply')
+
+    // Window and visualViewport can briefly still report the outer display size.
+    vi.stubGlobal('innerWidth', 466)
+    Object.assign(viewport, { width: 466, height: 596, pageTop: 0, offsetTop: 0 })
+    viewport.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('669px')
+  })
+
+  it('preserves real Duo keyboard panning and clears its carry-over after returning from the background', () => {
+    const { viewport } = unfoldedDuo()
+    mount()
+    const input = document.createElement('textarea')
+    input.value = 'Unsent reply'
+    host.querySelector('.app-shell').append(input)
+    input.focus()
+    Object.assign(viewport, { height: 337, pageTop: 332, offsetTop: 332 })
+    viewport.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('337px')
+    expect(pageTop()).toBe('332px')
+
+    hidden.mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    input.blur()
+    hidden.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(height()).toBe('669px')
+    expect(pageTop()).toBe('0px')
+    expect(input.value).toBe('Unsent reply')
+  })
+
+  it('holds the last usable Duo layout during a collapsed window and tracks the settled layout', () => {
+    const { viewport, layoutHeight } = unfoldedDuo()
+    mount()
+    layoutHeight.mockReturnValue(83)
+    vi.stubGlobal('innerHeight', 83)
+    viewport.height = 83
+    window.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('669px')
+
+    layoutHeight.mockReturnValue(587)
+    vi.stubGlobal('innerHeight', 587)
+    viewport.height = 587
+    window.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('587px')
+    expect(pageTop()).toBe('0px')
+  })
+
+  it('uses the unfolded layout once it returns, before the visual viewport leaves the outer size', () => {
+    const { viewport, layoutHeight } = unfoldedDuo()
+    const layoutWidth = vi.spyOn(document.documentElement, 'clientWidth', 'get')
+    mount()
+
+    layoutWidth.mockReturnValue(466)
+    layoutHeight.mockReturnValue(596)
+    vi.stubGlobal('innerWidth', 466)
+    Object.assign(viewport, { width: 466, height: 596 })
+    window.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('596px')
+
+    layoutWidth.mockReturnValue(867)
+    layoutHeight.mockReturnValue(669)
+    Object.assign(viewport, { height: 587, scale: 0.912 })
+    window.dispatchEvent(new Event('resize'))
+    expect(height()).toBe('669px')
+    expect(pageTop()).toBe('0px')
+  })
+
   it('tracks an overlay keyboard without a layout viewport resize and releases its listeners', () => {
     const viewport = new EventTarget()
     Object.assign(viewport, { height: 700, scale: 1 })
