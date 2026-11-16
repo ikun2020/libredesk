@@ -115,6 +115,9 @@ func widgetAuth(next func(*fastglue.Request) error) func(*fastglue.Request) erro
 		if err != nil || !u.Enabled {
 			return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
 		}
+		if isSupportSyncID(u.ExternalUserID.String) && (session.IsVisitor || session.ExternalUserID != u.ExternalUserID.String) {
+			return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
+		}
 
 		r.RequestCtx.SetUserValue(ctxWidgetContactID, session.UserID)
 		r.RequestCtx.SetUserValue(ctxWidgetIsVisitor, session.IsVisitor)
@@ -124,9 +127,16 @@ func widgetAuth(next func(*fastglue.Request) error) func(*fastglue.Request) erro
 		if visitorToken != "" && session.ExternalUserID != "" && session.UserID > 0 {
 			visitorSession, vErr := loadSession(app, visitorToken, config)
 			if vErr == nil && visitorSession.IsVisitor && visitorSession.UserID > 0 && visitorSession.UserID != session.UserID && visitorSession.InboxID == inbox.ID {
-				if err := app.user.MergeVisitorToContact(visitorSession.UserID, session.UserID); err != nil {
-					app.lo.Error("error merging visitor to contact", "visitor_id", visitorSession.UserID, "contact_id", session.UserID, "error", err)
+				merged := true
+				var err error
+				if isSupportSyncID(session.ExternalUserID) {
+					merged, err = app.user.MergeInboxVisitor(visitorSession.UserID, session.UserID, inbox.ID, session.ExternalUserID)
 				} else {
+					err = app.user.MergeVisitorToContact(visitorSession.UserID, session.UserID)
+				}
+				if err != nil {
+					app.lo.Error("error merging visitor to contact", "visitor_id", visitorSession.UserID, "contact_id", session.UserID, "error", err)
+				} else if merged {
 					app.lo.Info("merged visitor to contact", "visitor_id", visitorSession.UserID, "contact_id", session.UserID)
 					deleteSessionToken(app, visitorToken)
 					r.RequestCtx.Response.Header.Set(hdrClearVisitorToken, "true")

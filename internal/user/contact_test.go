@@ -93,6 +93,69 @@ func insertVisitor(t *testing.T, db *sqlx.DB, email string) int {
 	return id
 }
 
+func TestResolveContactExternalIDOnly(t *testing.T) {
+	u, db := newTestManager(t)
+	const email = "shared@example.com"
+	ordinary := newContact(email, "", "Ordinary", "")
+	resolve(t, u, ordinary, models.ContactSync)
+	visitor := insertVisitor(t, db, email)
+
+	first := newContact(email, "verified-first", "First", "")
+	other := newContact(email, "verified-other", "Other", "")
+	resolve(t, u, first, models.ContactSyncExternalID)
+	resolve(t, u, other, models.ContactSyncExternalID)
+	if first.ID == ordinary.ID || first.ID == visitor || other.ID == first.ID || other.ID == ordinary.ID || other.ID == visitor {
+		t.Fatalf("shared email claimed a different identity: first=%d other=%d ordinary=%d visitor=%d", first.ID, other.ID, ordinary.ID, visitor)
+	}
+	again := newContact("changed@example.com", first.ExternalUserID.String, "Updated", "")
+	resolve(t, u, again, models.ContactSyncExternalID)
+	if got := fetchRow(t, db, again.ID); again.ID != first.ID || got.Email != "changed@example.com" || got.FirstName != "Updated" {
+		t.Fatalf("repeated external identity did not update its original row: %+v", got)
+	}
+	if got := fetchRow(t, db, ordinary.ID); got.ExtID != "" || got.FirstName != "Ordinary" {
+		t.Fatalf("unverified record changed: %+v", got)
+	}
+}
+
+func TestMergeInboxVisitorOnlyMovesMatchingInbox(t *testing.T) {
+	u, db := newTestManager(t)
+	var inbox, otherInbox int
+	for index, id := range []*int{&inbox, &otherInbox} {
+		if err := db.Get(id, "INSERT INTO inboxes (name, channel) VALUES ($1,'livechat') RETURNING id", []string{"Widget", "Other widget"}[index]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := insertVisitor(t, db, "widget-visitor@example.com")
+	target := newContact("account@example.com", "verified-target", "Account", "")
+	resolve(t, u, target, models.ContactSyncExternalID)
+	var localConversation, otherConversation int
+	for index, id := range []*int{&localConversation, &otherConversation} {
+		err := db.Get(id, `INSERT INTO conversations (contact_id, inbox_id, status_id, priority_id)
+			VALUES ($1,$2,(SELECT min(id) FROM conversation_statuses),(SELECT min(id) FROM conversation_priorities)) RETURNING id`,
+			source, []int{inbox, otherInbox}[index])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if merged, err := u.MergeInboxVisitor(source, target.ID, inbox, "different-account"); err != nil || merged {
+		t.Fatalf("wrong identity merged: %v, %v", merged, err)
+	}
+	if merged, err := u.MergeInboxVisitor(source, target.ID, inbox, target.ExternalUserID.String); err != nil || !merged {
+		t.Fatalf("verified contact did not acquire visitor history: %v, %v", merged, err)
+	}
+	for id, want := range map[int]int{localConversation: target.ID, otherConversation: source} {
+		var got int
+		if err := db.Get(&got, "SELECT contact_id FROM conversations WHERE id=$1", id); err != nil || got != want {
+			t.Fatalf("conversation %d has contact %d, want %d: %v", id, got, want, err)
+		}
+	}
+	// A stale visitor session cannot claim a contact that was upgraded since it was issued.
+	db.MustExec("UPDATE users SET type='contact' WHERE id=$1", source)
+	if merged, err := u.MergeInboxVisitor(source, target.ID, otherInbox, target.ExternalUserID.String); err != nil || merged {
+		t.Fatalf("promoted visitor merged: %v, %v", merged, err)
+	}
+}
+
 func TestResolveContactReuse(t *testing.T) {
 	u, db := newTestManager(t)
 

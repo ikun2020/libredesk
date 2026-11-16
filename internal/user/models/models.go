@@ -41,6 +41,8 @@ const (
 	ContactReuse ContactPolicy = iota
 	// ContactSync also updates name/email and enriches external_user_id on a match.
 	ContactSync
+	// ContactSyncExternalID only trusts the supplied external identity.
+	ContactSyncExternalID
 )
 
 type UserCompact struct {

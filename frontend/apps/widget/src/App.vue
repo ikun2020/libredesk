@@ -71,7 +71,7 @@ watch(
 
 onMounted(() => {
   setupParentMessageListeners()
-  window.parent.postMessage({ type: 'VUE_APP_READY', visitorProfileProtocol: 1 }, '*')
+  window.parent.postMessage({ type: 'VUE_APP_READY', visitorProfileProtocol: 1, supportSyncIdentityProtocol: 1 }, '*')
 })
 
 const signalWidgetLoaded = async () => {
@@ -99,6 +99,7 @@ const fetchInitialConversations = async () => {
   if (directToConversation && success) {
     widgetStore.navigateToChat()
   }
+  return success
 }
 
 let languageRequest = 0
@@ -134,10 +135,51 @@ const setLanguage = async (requested) => {
 
 // Listen for messages from parent window (widget.js)
 let identityRequest = 0
+
+const exchangeSupportSyncIdentity = async (message, parentOrigin) => {
+  const refresh = message.type === 'SUPPORT_SYNC_PROFILE'
+  const previousUser = userStore.userID
+  if (refresh && (!previousUser || !userStore.userSessionToken || userStore.isVisitor)) return
+  const request = ++identityRequest
+  try {
+    const response = await api.exchangeJWTForSession(message.jwt)
+    if (request !== identityRequest) return
+    const { identity_provider, session_token, user } = response.data.data
+    if (identity_provider !== 'support-sync' || !session_token || !user?.user_id || user.is_visitor !== false ||
+      (refresh && user.user_id !== previousUser)) throw new Error('Invalid Support Sync identity')
+
+    if (!refresh) {
+      clearVisitorProfile()
+      initVisitorToken(message.visitorToken || '')
+      chatStore.conversations = null
+      skipInitialWsSync()
+    }
+    // Keep the verified session inside the support frame. The host signs in
+    // again on reload, and refreshes the profile without discarding drafts.
+    userStore.setSessionToken(session_token)
+    setApiSessionToken(session_token)
+    userStore.setUserMeta(user)
+    if (!refresh) {
+      if (!await fetchInitialConversations()) throw new Error('Support Sync history unavailable')
+      if (request !== identityRequest) return
+      await signalWidgetLoaded()
+    }
+    if (request === identityRequest) window.parent.postMessage({ type: 'SUPPORT_SYNC_RESULT', ok: true }, parentOrigin)
+  } catch {
+    if (request !== identityRequest) return
+    if (!refresh) {
+      userStore.clearSessionToken()
+      initVisitorToken('')
+    }
+    window.parent.postMessage({ type: 'SUPPORT_SYNC_RESULT', ok: false }, parentOrigin)
+  }
+}
+
 const setupParentMessageListeners = () => {
   window.addEventListener('message', async (event) => {
     if (event.source !== window.parent || !event.data || typeof event.data !== 'object') return
-    const parentOrigin = new URLSearchParams(window.location.search).get('parent_origin')
+    const params = new URLSearchParams(window.location.search)
+    const parentOrigin = params.get('parent_origin')
     if (parentOrigin && event.origin !== parentOrigin) return
     if (event.data.campaignSessionKey) proactive.setSessionKey(event.data.campaignSessionKey)
     if (event.data.campaignBrowserKey) proactive.setBrowserKey(event.data.campaignBrowserKey)
@@ -181,6 +223,10 @@ const setupParentMessageListeners = () => {
       }
     } else if (event.data.type === 'SET_LANGUAGE') {
       await setLanguage(event.data.language)
+    } else if (event.data.type === 'SUPPORT_SYNC_AUTH' || event.data.type === 'SUPPORT_SYNC_PROFILE') {
+      if (parentOrigin && params.get('integration') === 'support-sync') {
+        await exchangeSupportSyncIdentity(event.data, parentOrigin)
+      }
     } else if (event.data.type === 'SET_JWT_TOKEN') {
       const request = ++identityRequest
       clearVisitorProfile()

@@ -59,7 +59,7 @@ type WidgetSession struct {
 
 // Claims holds JWT claims for a JWT user.
 type Claims struct {
-	// Read only to reject capabilities from the retired XBoard signed integration.
+	// Purpose distinguishes Support Sync credentials from retired capabilities.
 	Purpose                 string         `json:"purpose,omitempty"`
 	SessionID               string         `json:"session_id,omitempty"`
 	UserID                  int            `json:"user_id,omitempty"`
@@ -394,7 +394,7 @@ func handleAuthExchange(r *fastglue.Request) error {
 	}
 
 	// Verify the customer-generated JWT.
-	claims, err := verifyStandardJWT(req.JWT, inbox.Secret.String)
+	claims, err := verifyWidgetIdentityJWT(req.JWT, inbox.Secret.String, inbox.UUID)
 	if err != nil {
 		app.lo.Warn("widget authentication rejected: invalid JWT", "inbox_id", inbox.ID, "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("globals.terms.unAuthorized"), nil, envelope.UnauthorizedError)
@@ -442,7 +442,7 @@ func handleAuthExchange(r *fastglue.Request) error {
 		if err := app.redis.Set(ctx, reverseKey, token, sessionTTL).Err(); err != nil {
 			app.lo.Warn("error indexing widget session", "inbox_id", inbox.ID, "contact_id", contactID, "error", err)
 		}
-		return r.SendEnvelope(map[string]any{
+		response := map[string]any{
 			"session_token": token,
 			"user": map[string]any{
 				"user_id":    contactID,
@@ -450,12 +450,18 @@ func handleAuthExchange(r *fastglue.Request) error {
 				"first_name": claims.FirstName,
 				"last_name":  claims.LastName,
 			},
-		})
+		}
+		if isSupportSyncID(claims.ExternalUserID) {
+			response["identity_provider"] = supportSyncPurpose
+		}
+		return r.SendEnvelope(response)
 	}
 
 	// Reuse existing valid session and refresh its TTL.
 	if oldToken, err := app.redis.Get(ctx, reverseKey).Result(); err == nil && oldToken != "" {
-		if _, err := loadSession(app, oldToken, config); err == nil {
+		if previous, err := loadSession(app, oldToken, config); err == nil &&
+			(!isSupportSyncID(claims.ExternalUserID) ||
+				(previous.InboxID == inbox.ID && previous.UserID == contactID && !previous.IsVisitor && previous.ExternalUserID == claims.ExternalUserID)) {
 			return sendSession(oldToken)
 		}
 	}
@@ -848,7 +854,11 @@ func resolveOrCreateExternalContact(app *App, claims Claims) (int, error) {
 			ExternalUserID:         null.NewString(claims.ExternalUserID, true),
 			CustomAttributes:       marshalCustomAttributes(claims.ContactCustomAttributes, app),
 		}
-		if err := app.user.ResolveContact(&user, umodels.ContactSync); err != nil {
+		policy := umodels.ContactSync
+		if isSupportSyncID(claims.ExternalUserID) {
+			policy = umodels.ContactSyncExternalID
+		}
+		if err := app.user.ResolveContact(&user, policy); err != nil {
 			return 0, err
 		}
 		return user.ID, nil
@@ -964,6 +974,9 @@ func resolveUserFromClaims(app *App, claims Claims) (umodels.User, error) {
 	if !user.Enabled {
 		return umodels.User{}, envelope.NewError(envelope.PermissionError, "User is disabled", nil)
 	}
+	if isSupportSyncID(user.ExternalUserID.String) && claims.ExternalUserID != user.ExternalUserID.String {
+		return umodels.User{}, envelope.NewError(envelope.PermissionError, "Signed external identity required", nil)
+	}
 	return user, nil
 }
 
@@ -972,6 +985,9 @@ func verifyJWT(tokenString string, secretKey []byte) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		if claims, ok := token.Claims.(*Claims); ok && isSupportSyncID(claims.ExternalUserID) && token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("invalid Support Sync signing method")
 		}
 		return secretKey, nil
 	}, jwt.WithExpirationRequired())
@@ -1000,8 +1016,9 @@ func verifyStandardJWT(jwtToken string, inboxSecret string) (Claims, error) {
 	if err != nil {
 		return Claims{}, err
 	}
-	// In particular, an old logout capability must never become a native login.
-	if claims.Purpose != "" || claims.SessionID != "" {
+	// In particular, an old logout capability must never become a login.
+	if claims.SessionID != "" ||
+		(claims.Purpose != "" && !(claims.Purpose == supportSyncPurpose && isSupportSyncID(claims.ExternalUserID))) {
 		return Claims{}, fmt.Errorf("retired widget authentication capability")
 	}
 

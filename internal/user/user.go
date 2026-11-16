@@ -136,6 +136,7 @@ type queries struct {
 	UpdateAPIKeyLastUsed *sqlx.Stmt `query:"update-api-key-last-used"`
 
 	MergeVisitorToContact *sqlx.Stmt `query:"merge-visitor-to-contact"`
+	MergeInboxVisitor     *sqlx.Stmt `query:"merge-inbox-visitor"`
 	DeleteContact         *sqlx.Stmt `query:"delete-contact"`
 	ExportContactData     *sqlx.Stmt `query:"export-contact-data"`
 }
@@ -513,6 +514,16 @@ func (u *Manager) MergeVisitorToContact(visitorID, contactID int) error {
 		return fmt.Errorf("merging visitor to contact: %w", err)
 	}
 	return nil
+}
+
+// MergeInboxVisitor transfers the conversations of a verified visitor token
+// to the signed account in the same inbox. The source contact is retained.
+func (u *Manager) MergeInboxVisitor(visitorID, contactID, inboxID int, externalID string) (bool, error) {
+	var eligible bool
+	if err := u.q.MergeInboxVisitor.Get(&eligible, visitorID, contactID, inboxID, externalID); err != nil {
+		return false, fmt.Errorf("merging inbox visitor: %w", err)
+	}
+	return eligible, nil
 }
 
 func (u *Manager) GetUserIDsByRole(roleID int) ([]int, error) {

@@ -51,6 +51,10 @@ beforeEach(async () => {
   })
   Object.assign(widget, { config: {}, currentView: 'chat', navigateToHome: vi.fn(), navigateToChat: vi.fn() })
   user.userSessionToken = 'old-session'
+  user.userID = null
+  user.isVisitor = false
+  user.setSessionToken = vi.fn(token => { user.userSessionToken = token })
+  user.setUserMeta = vi.fn(meta => { user.userID = meta.user_id; user.isVisitor = meta.is_visitor })
   user.clearSessionToken = vi.fn(() => { user.userSessionToken = '' })
   saveSession.mockImplementation(token => { user.userSessionToken = token })
   originalParent = Object.getOwnPropertyDescriptor(window, 'parent')
@@ -127,4 +131,35 @@ test('clearing or upgrading identity discards unsigned reference data', async ()
   expect(clearVisitorProfile).toHaveBeenCalledOnce()
   await message('SET_JWT_TOKEN', { jwt: 'new-user.jwt' })
   expect(clearVisitorProfile).toHaveBeenCalledTimes(2)
+})
+
+const signedMode = () => window.history.replaceState({}, '', window.location.href + '&integration=support-sync')
+const signedResponse = (userID = 42) => ({
+  data: { data: { identity_provider: 'support-sync', session_token: 'signed-session', user: { user_id: userID, is_visitor: false } } }
+})
+
+test('Support Sync rejects exchanges without the strict server marker', async () => {
+  signedMode()
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt' })
+  expect(user.setSessionToken).not.toHaveBeenCalled()
+  expect(parent.postMessage).toHaveBeenCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: false }, 'https://panel.example.test')
+  expect(parent.postMessage.mock.calls.some(([event]) => event.type === 'WIDGET_LOADED')).toBe(false)
+})
+
+test('Support Sync restores history and updates profile without exposing the session or clearing drafts', async () => {
+  signedMode()
+  api.exchangeJWTForSession.mockResolvedValue(signedResponse())
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt', visitorToken: 'prior-visitor' })
+  expect(user.userID).toBe(42)
+  expect(chat.fetchConversations).toHaveBeenCalledOnce()
+  expect(parent.postMessage).toHaveBeenCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: true }, 'https://panel.example.test')
+  expect(saveSession).not.toHaveBeenCalled()
+  const drafts = chat.drafts
+  await message('SUPPORT_SYNC_PROFILE', { jwt: 'refresh.jwt' })
+  expect(chat.fetchConversations).toHaveBeenCalledOnce()
+  expect(chat.drafts).toBe(drafts)
+  api.exchangeJWTForSession.mockResolvedValue(signedResponse(99))
+  await message('SUPPORT_SYNC_PROFILE', { jwt: 'different.jwt' })
+  expect(user.userID).toBe(42)
+  expect(parent.postMessage).toHaveBeenLastCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: false }, 'https://panel.example.test')
 })

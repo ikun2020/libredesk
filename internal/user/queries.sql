@@ -554,6 +554,43 @@ SELECT
     (SELECT COUNT(*) FROM transfer_messages) as messages_transferred,
     (SELECT COUNT(*) FROM delete_visitor) as visitor_deleted;
 
+-- name: merge-inbox-visitor
+WITH source_visitor AS MATERIALIZED (
+    SELECT id FROM users
+    WHERE id = $1 AND type = 'visitor' AND enabled
+      AND deleted_at IS NULL AND external_user_id IS NULL
+    FOR UPDATE
+), target_contact AS MATERIALIZED (
+    SELECT id FROM users
+    WHERE id = $2 AND type = 'contact' AND enabled
+      AND deleted_at IS NULL AND external_user_id = $4
+    FOR UPDATE
+), moved AS (
+    UPDATE conversations AS c
+    SET contact_id = target_contact.id,
+        last_message_sender_id = CASE WHEN c.last_message_sender_id = source_visitor.id THEN target_contact.id ELSE c.last_message_sender_id END,
+        last_interaction_sender_id = CASE WHEN c.last_interaction_sender_id = source_visitor.id THEN target_contact.id ELSE c.last_interaction_sender_id END,
+        updated_at = now()
+    FROM source_visitor, target_contact
+    WHERE c.contact_id = source_visitor.id AND c.inbox_id = $3
+    RETURNING c.id, c.uuid
+), moved_messages AS (
+    UPDATE conversation_messages SET sender_id = $2
+    WHERE sender_id = $1 AND conversation_id IN (SELECT id FROM moved)
+), moved_campaigns AS (
+    UPDATE widget_campaign_deliveries SET contact_id = $2
+    WHERE contact_id = $1 AND inbox_id = $3 AND conversation_uuid IN (SELECT uuid FROM moved)
+), former_participation AS (
+    DELETE FROM conversation_participants
+    WHERE user_id = $1 AND conversation_id IN (SELECT id FROM moved)
+    RETURNING conversation_id
+), moved_participation AS (
+    INSERT INTO conversation_participants (conversation_id, user_id)
+    SELECT conversation_id, $2 FROM former_participation
+    ON CONFLICT (conversation_id, user_id) DO NOTHING
+)
+SELECT EXISTS (SELECT 1 FROM source_visitor) AND EXISTS (SELECT 1 FROM target_contact);
+
 -- name: get-user-ids-by-role
 SELECT user_id FROM user_roles WHERE role_id = $1;
 

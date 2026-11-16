@@ -19,6 +19,12 @@ func (u *Manager) ResolveContact(user *models.User, policy models.ContactPolicy)
 
 	user.Email = null.NewString(strings.ToLower(strings.TrimSpace(user.Email.String)), user.Email.Valid)
 
+	if policy == models.ContactSyncExternalID {
+		if user.ExternalUserID.String == "" {
+			return fmt.Errorf("external user ID is required")
+		}
+		return u.upsertExternalContact(user)
+	}
 	if policy == models.ContactSync {
 		return u.syncContact(user)
 	}
@@ -182,17 +188,7 @@ func (u *Manager) syncContact(user *models.User) error {
 			}
 		}
 
-		password, err := u.newContactPassword()
-		if err != nil {
-			return err
-		}
-
-		// Upsert by ext_id - creates new or updates email/name on ext_id conflict.
-		if err := u.q.InsertContactWithExtID.QueryRow(user.Email, user.FirstName, user.LastName, password, user.AvatarURL, user.ExternalUserID, user.CustomAttributes, user.PhoneNumber, user.PhoneNumberCountryCode).Scan(&user.ID); err != nil {
-			u.lo.Error("error inserting contact with external ID", "error", err)
-			return fmt.Errorf("inserting contact with external ID: %w", err)
-		}
-		return nil
+		return u.upsertExternalContact(user)
 	}
 
 	if user.Email.Valid && user.Email.String != "" {
@@ -220,6 +216,19 @@ func (u *Manager) syncContact(user *models.User) error {
 	if err := u.q.InsertContactNoExtID.QueryRow(user.Email, user.FirstName, user.LastName, password, user.AvatarURL).Scan(&user.ID); err != nil {
 		u.lo.Error("error inserting contact", "error", err)
 		return fmt.Errorf("insert contact: %w", err)
+	}
+	return nil
+}
+
+func (u *Manager) upsertExternalContact(user *models.User) error {
+	password, err := u.newContactPassword()
+	if err != nil {
+		return err
+	}
+
+	if err := u.q.InsertContactWithExtID.QueryRow(user.Email, user.FirstName, user.LastName, password, user.AvatarURL, user.ExternalUserID, user.CustomAttributes, user.PhoneNumber, user.PhoneNumberCountryCode).Scan(&user.ID); err != nil {
+		u.lo.Error("error inserting contact with external ID", "error", err)
+		return fmt.Errorf("inserting contact with external ID: %w", err)
 	}
 	return nil
 }
