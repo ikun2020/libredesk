@@ -17,17 +17,39 @@
         </span>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Button
-          type="button"
-          variant="ghost"
-          :class="MOBILE_ICON_BUTTON_CLASS"
-          :aria-label="t('copilot.details')"
-          :aria-expanded="detailsOpen"
-          @click="emitter.emit(EMITTER_EVENTS.CONVERSATION_SIDEBAR_TOGGLE)"
-        >
-          <PanelRightClose v-if="detailsOpen" class="w-4 h-4" aria-hidden="true" />
-          <PanelRight v-else class="w-4 h-4" aria-hidden="true" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button
+              variant="ghost"
+              :class="MOBILE_ICON_BUTTON_CLASS"
+              :aria-label="t('globals.messages.moreActions')"
+            >
+              <MoreHorizontal class="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                {{ t('conversation.downloadTranscript') }}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem @click="downloadTranscript('txt')">
+                  {{ t('globals.terms.plainText') }}
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="downloadTranscript('pdf')">
+                  {{ t('globals.terms.pdf') }}
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem
+              v-if="userStore.can(perms.MESSAGES_WRITE_PRIVATE)"
+              :disabled="isSummarizing"
+              @click="summarize"
+            >
+              {{ t('conversation.summarize') }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Tooltip v-if="isSnoozed && snoozedUntilLabel">
           <TooltipTrigger as-child>
             <span class="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
@@ -62,39 +84,17 @@
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <Button
-              variant="ghost"
-              :class="MOBILE_ICON_BUTTON_CLASS"
-              :aria-label="t('globals.messages.moreActions')"
-            >
-              <MoreHorizontal class="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                {{ t('conversation.downloadTranscript') }}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem @click="downloadTranscript('txt')">
-                  {{ t('globals.terms.plainText') }}
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="downloadTranscript('pdf')">
-                  {{ t('globals.terms.pdf') }}
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuItem
-              v-if="userStore.can(perms.MESSAGES_WRITE_PRIVATE)"
-              :disabled="isSummarizing"
-              @click="summarize"
-            >
-              {{ t('conversation.summarize') }}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          type="button"
+          variant="ghost"
+          :class="MOBILE_ICON_BUTTON_CLASS"
+          :aria-label="t('copilot.details')"
+          :aria-expanded="detailsOpen"
+          @click="emitter.emit(EMITTER_EVENTS.CONVERSATION_SIDEBAR_TOGGLE)"
+        >
+          <PanelRightClose v-if="detailsOpen" class="w-4 h-4" aria-hidden="true" />
+          <PanelRight v-else class="w-4 h-4" aria-hidden="true" />
+        </Button>
       </div>
     </div>
 
