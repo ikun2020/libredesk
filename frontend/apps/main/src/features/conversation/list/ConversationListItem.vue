@@ -4,9 +4,10 @@
       <router-link
         :to="conversationRoute"
         :aria-current="isCurrent ? 'page' : undefined"
-        class="group relative block cursor-pointer px-3 py-3 transition-colors duration-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        class="group relative block cursor-pointer px-3 py-3 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         :class="{
           'overflow-hidden rounded-xl': duo,
+          'transition-colors duration-150': !duo,
           'bg-accent before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-r before:bg-primary': isCurrent,
           'bg-primary/5 can-hover:hover:bg-primary/10': isItemSelected && !isCurrent,
           'can-hover:hover:bg-accent/40': !isCurrent && !isItemSelected
@@ -234,7 +235,7 @@ const { t } = useI18n()
 
 const props = defineProps({
   conversation: Object,
-  currentConversation: Object,
+  isCurrent: Boolean,
   contactFullName: String,
   duo: Boolean
 })
@@ -344,8 +345,6 @@ const showSubject = computed(
 )
 
 const isUnread = computed(() => props.conversation.unread_message_count > 0)
-
-const isCurrent = computed(() => props.conversation.uuid === props.currentConversation?.uuid)
 
 const isItemSelected = computed(() => {
   return conversationStore.isSelected(props.conversation.uuid)

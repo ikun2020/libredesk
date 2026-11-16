@@ -1,15 +1,27 @@
 <template>
   <div ref="detailContainerRef" class="relative h-full min-h-0">
     <div
-      v-if="isLoading"
+      v-if="isLoading && !showDuoPlaceholder"
       class="conv-progress absolute inset-x-0 top-0 h-0.5 z-50 pointer-events-none"
     />
+    <div
+      v-if="showDuoPlaceholder"
+      class="duo-conversation-placeholder absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-4 text-center"
+    >
+      <template v-if="conversationStore.conversation.errorMessage">
+        <p class="text-sm text-muted-foreground" role="alert">{{ conversationStore.conversation.errorMessage }}</p>
+        <Button variant="outline" @click="fetchConversation(props.uuid)">
+          {{ $t('globals.terms.tryAgain') }}
+        </Button>
+      </template>
+      <Spinner v-else :absolute="false" />
+    </div>
     <ResizablePanelGroup
       v-if="showContent && panelGroupWidth > 0"
       direction="horizontal"
       class="h-full min-h-0 transition-opacity duration-200"
-      :class="{ 'opacity-60': isDimmed }"
-      :inert="isDimmed"
+      :class="{ 'opacity-60': isDimmed, invisible: showDuoPlaceholder }"
+      :inert="isDimmed || showDuoPlaceholder"
       @layout="onLayoutChange"
     >
       <!-- Conversation Content Panel -->
@@ -73,9 +85,12 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useElementSize, useMediaQuery, useStorage } from '@vueuse/core'
 import { useConversationStore } from '@main/stores/conversation'
 import { useEmitter } from '@main/composables/useEmitter'
+import { useIPhoneDuoInbox } from '@main/composables/useIPhoneDuoInbox'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import Conversation from '@main/features/conversation/Conversation.vue'
 import ConversationSideBar from '@main/features/conversation/sidebar/ConversationSideBar.vue'
+import { Button } from '@shared-ui/components/ui/button'
+import { Spinner } from '@shared-ui/components/ui/spinner'
 import { Sheet, SheetContent, SheetTitle } from '@shared-ui/components/ui/sheet'
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@shared-ui/components/ui/resizable'
 
@@ -85,6 +100,7 @@ const props = defineProps({
 
 const conversationStore = useConversationStore()
 const emitter = useEmitter()
+const duoSplit = useIPhoneDuoInbox()
 const compactViewport = useMediaQuery('(max-width: 1279px)')
 const detailContainerRef = ref(null)
 const { width: panelGroupWidth } = useElementSize(detailContainerRef)
@@ -104,12 +120,15 @@ watch(useDetailsDrawer, () => {
 const showContent = computed(
   () => conversationStore.current || conversationStore.conversation.loading
 )
+const showDuoPlaceholder = computed(
+  () => duoSplit.value && !!props.uuid && conversationStore.current?.uuid !== props.uuid
+)
 
 const isLoading = computed(
   () => conversationStore.conversation.loading || conversationStore.messages.loading
 )
 
-const isDimmed = computed(() => conversationStore.conversation.loading)
+const isDimmed = computed(() => !duoSplit.value && conversationStore.conversation.loading)
 
 const toggleSidebar = () => {
   if (useDetailsDrawer.value) {

@@ -279,6 +279,8 @@ export const useConversationStore = defineStore('conversation', () => {
   }
   // Bumped on resetConversations() so in-flight requests can drop stale responses.
   let contextSeq = 0
+  let activeConversationLoad = null
+  let activeMessageLoad = null
   const emitter = useEmitter()
 
   const incrementMessageVersion = () => setTimeout(() => messages.version++, 0)
@@ -504,43 +506,53 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function fetchConversation (uuid) {
+    activeConversationLoad?.guard?.cancel()
+    const load = {}
+    activeConversationLoad = load
+    conversation.errorMessage = ''
     const cached = conversationDataCache.get(uuid)
     if (cached) {
       conversation.data = cached
       resetTypingState()
       subscribeToConversation(uuid)
-      silentRefetchConversation(uuid)
+      silentRefetchConversation(uuid, load)
       return
     }
-    const guard = delayedLoading(conversation, 'loading')
+    load.guard = delayedLoading(conversation, 'loading', 300, 0)
     try {
       const resp = await api.getConversation(uuid)
+      if (activeConversationLoad !== load) return
       rememberAssignee(resp.data.data)
       conversation.data = resp.data.data
       resetTypingState()
       subscribeToConversation(uuid)
       cacheConversationData(uuid, conversation.data)
     } catch (error) {
-      conversation.errorMessage = handleHTTPError(error).message
+      if (activeConversationLoad !== load) return
+      const result = handleHTTPError(error)
+      if (result.canceled) return
+      conversation.errorMessage = result.message
       emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
         variant: 'destructive',
         description: conversation.errorMessage
       })
     } finally {
-      guard.release()
+      if (activeConversationLoad === load) load.guard.release()
     }
   }
 
-  async function silentRefetchConversation (uuid) {
+  async function silentRefetchConversation (uuid, load) {
     try {
       const resp = await api.getConversation(uuid)
-      if (conversation.data?.uuid === uuid) {
+      if (activeConversationLoad === load && conversation.data?.uuid === uuid) {
         rememberAssignee(resp.data.data)
         deepMerge(conversation.data, resp.data.data)
         cacheConversationData(uuid, conversation.data)
       }
     } catch (error) {
-      console.warn('silent conversation refetch failed', error)
+      if (activeConversationLoad === load && !handleHTTPError(error).canceled) {
+        console.warn('silent conversation refetch failed', error)
+      }
     }
   }
 
@@ -553,10 +565,16 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function fetchMessages (uuid, fetchNextPage = false) {
+    activeMessageLoad?.guard?.cancel()
+    const load = {}
+    activeMessageLoad = load
+    messages.fetching = false
+    messages.fetchingLatest = false
     if (staleConversationUUIDs.has(uuid) && messages.data.hasConversation(uuid)) {
       messages.fetchingLatest = true
       try {
         const response = await api.getConversationMessages(uuid, { page: 1, page_size: MESSAGE_LIST_PAGE_SIZE })
+        if (activeMessageLoad !== load) return
         const newMessages = response.data?.data?.results || []
         let lastAdded = null
         for (const m of newMessages) {
@@ -574,12 +592,16 @@ export const useConversationStore = defineStore('conversation', () => {
           }, 100)
         }
       } catch (error) {
-        emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
-          variant: 'destructive',
-          description: handleHTTPError(error).message
-        })
+        if (activeMessageLoad !== load) return
+        const result = handleHTTPError(error)
+        if (!result.canceled) {
+          emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
+            variant: 'destructive',
+            description: result.message
+          })
+        }
       } finally {
-        messages.fetchingLatest = false
+        if (activeMessageLoad === load) messages.fetchingLatest = false
       }
     }
 
@@ -587,28 +609,36 @@ export const useConversationStore = defineStore('conversation', () => {
       return
     }
 
-    const guard = fetchNextPage ? null : delayedLoading(messages, 'loading')
+    if (!fetchNextPage) load.guard = delayedLoading(messages, 'loading', 300, 0)
     messages.fetching = true
     const page = messages.data.getLastFetchedPage(uuid) + 1
     try {
       const response = await api.getConversationMessages(uuid, { page, page_size: MESSAGE_LIST_PAGE_SIZE })
+      if (activeMessageLoad !== load) return
       const result = response.data?.data || {}
       messages.data.addMessages(uuid, result.results || [], result.page, result.total_pages)
       clearPendingMessages(uuid)
       incrementMessageVersion()
     } catch (error) {
-      emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
-        variant: 'destructive',
-        description: handleHTTPError(error).message
-      })
+      if (activeMessageLoad !== load) return
+      const result = handleHTTPError(error)
+      if (!result.canceled) {
+        emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
+          variant: 'destructive',
+          description: result.message
+        })
+      }
     } finally {
-      if (guard) guard.release()
-      messages.fetching = false
+      if (activeMessageLoad === load) {
+        load.guard?.release()
+        messages.fetching = false
+      }
     }
   }
 
   async function fetchNextMessages () {
-    return fetchMessages(conversation.data.uuid, true)
+    const uuid = conversation.data?.uuid
+    if (uuid && isViewingConversation(uuid)) return fetchMessages(uuid, true)
   }
 
   async function fetchMessage (conversationUUID, messageUUID) {
@@ -629,7 +659,7 @@ export const useConversationStore = defineStore('conversation', () => {
       })
     }
     staleConversationUUIDs.add(conversationUUID)
-    const isCurrent = conversation.data?.uuid === conversationUUID
+    const isCurrent = conversation.data?.uuid === conversationUUID && isViewingConversation(conversationUUID)
     if (isCurrent) await fetchMessages(conversationUUID)
     if (!isCurrent || !staleConversationUUIDs.has(conversationUUID)) messages.pending.delete(messageUUID)
     return messages.data.getAllPagesMessages(conversationUUID).find(message => message.uuid === messageUUID)

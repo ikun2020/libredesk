@@ -136,10 +136,10 @@
           v-for="conversation in conversationStore.conversationsList"
           :key="conversation.uuid"
           :conversation="conversation"
-          :currentConversation="conversationStore.current"
+          :isCurrent="conversation.uuid === selectedUUID"
           :contactFullName="conversationStore.getContactFullName(conversation.uuid)"
           :duo="duo"
-          class="transition-colors duration-200"
+          :class="{ 'transition-colors duration-200': !duo }"
         />
       </div>
 
@@ -211,7 +211,7 @@ import ConversationBulkActionToolbar from '@/features/conversation/list/Conversa
 import ConversationListItem from '@/features/conversation/list/ConversationListItem.vue'
 import ConversationListItemSkeleton from '@/features/conversation/list/ConversationListItemSkeleton.vue'
 
-defineProps({ duo: Boolean })
+const props = defineProps({ duo: Boolean })
 
 const conversationStore = useConversationStore()
 const teamStore = useTeamStore()
@@ -220,6 +220,7 @@ const emitter = useEmitter()
 const { canBulkAct } = useBulkActionPermissions()
 const route = useRoute()
 const { t } = useI18n()
+const selectedUUID = computed(() => props.duo ? route.params.uuid : conversationStore.current?.uuid)
 
 watch(
   () => conversationStore.conversationsList

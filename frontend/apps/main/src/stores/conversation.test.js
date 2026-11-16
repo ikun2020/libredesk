@@ -43,6 +43,43 @@ const setup = () => {
   return store
 }
 
+it('keeps the latest selection in control of loading and renders it as soon as both responses arrive', async () => {
+  vi.useFakeTimers()
+  try {
+    const store = setup()
+    const firstDetail = Promise.withResolvers()
+    const firstMessages = Promise.withResolvers()
+    const nextDetail = Promise.withResolvers()
+    const nextMessages = Promise.withResolvers()
+    api.getConversation.mockReturnValueOnce(firstDetail.promise).mockReturnValueOnce(nextDetail.promise)
+    api.getConversationMessages.mockReturnValueOnce(firstMessages.promise).mockReturnValueOnce(nextMessages.promise)
+
+    const first = Promise.all([store.fetchConversation('conversation-b'), store.fetchMessages('conversation-b')])
+    await vi.advanceTimersByTimeAsync(350)
+    expect(store.conversation.loading).toBe(true)
+    expect(store.messages.loading).toBe(true)
+
+    const next = Promise.all([store.fetchConversation('conversation-c'), store.fetchMessages('conversation-c')])
+    await vi.advanceTimersByTimeAsync(350)
+    firstDetail.resolve({ data: { data: { uuid: 'conversation-b' } } })
+    firstMessages.resolve({ data: { data: { results: [], page: 1, total_pages: 1 } } })
+    await first
+    expect(store.current.uuid).toBe('conversation-a')
+    expect(store.conversation.loading).toBe(true)
+    expect(store.messages.loading).toBe(true)
+
+    nextDetail.resolve({ data: { data: { uuid: 'conversation-c' } } })
+    nextMessages.resolve({ data: { data: { results: [oldMessage], page: 1, total_pages: 1 } } })
+    await next
+    expect(store.current.uuid).toBe('conversation-c')
+    expect(store.conversationMessages).toEqual([oldMessage])
+    expect(store.conversation.loading).toBe(false)
+    expect(store.messages.loading).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 describe('conversation contact display name', () => {
   it('shows a synced email on the existing conversation when the visitor has the default name', () => {
     const store = setup()
