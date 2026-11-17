@@ -1,15 +1,15 @@
 <template>
-  <DropdownMenu :open="open" @update:open="setOpen">
+  <DropdownMenu :open="open" :modal="fitViewport ? false : undefined" @update:open="setOpen">
     <DropdownMenuTrigger as-child :disabled="disabled">
-      <Button type="button" variant="outline" size="sm" class="shrink-0 max-md:min-h-11">
-        {{ t('replyBox.quickSend') }}
+      <Button type="button" variant="outline" size="sm" class="quick-reply-trigger shrink-0 max-md:min-h-11">
+        <span class="truncate">{{ t('replyBox.quickSend') }}</span>
         <ChevronDown class="size-4" aria-hidden="true" />
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent
       side="top"
       align="end"
-      :avoid-collisions="false"
+      :avoid-collisions="fitViewport"
       :collision-padding="8"
       class="w-64 max-w-[--radix-dropdown-menu-content-available-width]"
     >
@@ -46,7 +46,7 @@ import { useEmitter } from '@main/composables/useEmitter'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents'
 import { handleHTTPError } from '@shared-ui/utils/http'
 
-const props = defineProps({ disabled: Boolean })
+const props = defineProps({ disabled: Boolean, fitViewport: Boolean })
 const emit = defineEmits(['insert'])
 const { t } = useI18n()
 const emitter = useEmitter()

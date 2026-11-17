@@ -200,6 +200,42 @@ describe('Reply composer on touch screens', () => {
     }
   })
 
+  it('keeps Quick send beside the reply tabs on a narrow Duo PWA', () => {
+    cy.viewport(374, 669)
+    let state
+    openConversation('coarse', {
+      beforeLoad(win) {
+        state = standaloneViewport(win)
+        Object.defineProperty(win.navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15' })
+        Object.defineProperty(win, 'devicePixelRatio', { value: 3 })
+        Object.defineProperty(win.screen, 'width', { value: 466 })
+        Object.defineProperty(win.screen, 'height', { value: 678 })
+      }
+    })
+
+    const draft = 'Duo reply draft'
+    let editableNode
+    editor().click('center', { scrollBehavior: false }).type(draft, { scrollBehavior: false })
+    editor().then(($editor) => { editableNode = $editor[0] })
+
+    for (const height of [669, 337]) {
+      cy.viewport(374, height)
+      cy.window().then((win) => {
+        state.viewport.height = height
+        state.viewport.dispatchEvent(new win.Event('resize'))
+      })
+      cy.contains('.reply-box-header button', /^Quick send$/).should(($quickSend) => {
+        const quickSend = $quickSend[0].getBoundingClientRect()
+        const tabs = $quickSend.closest('.reply-box-header').find('[role="tablist"]')[0].getBoundingClientRect()
+        expect(quickSend.left, 'Quick send follows the reply tabs').to.be.at.least(tabs.right)
+        expect(quickSend.top, 'Quick send is in the same row').to.be.lessThan(tabs.bottom)
+        expect(quickSend.bottom, 'Quick send is in the same row').to.be.greaterThan(tabs.top)
+      })
+      cy.then(() => expectSameFocusedEditor(editableNode, draft))
+      expectInlineLayout(height)
+    }
+  })
+
   it('preserves the draft when manually entering fullscreen and returning inline', () => {
     cy.viewport(390, 700)
     openConversation('coarse')

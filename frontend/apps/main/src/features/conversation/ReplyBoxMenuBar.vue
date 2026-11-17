@@ -3,7 +3,7 @@
     class="relative flex min-h-14 shrink-0 flex-wrap justify-between gap-y-2"
     :class="{ 'items-end': isFullscreen, 'items-center': !isFullscreen }"
   >
-    <div class="flex items-center gap-1">
+    <div class="reply-box-tools flex items-center gap-1">
       <input
         type="file"
         class="hidden"
@@ -98,11 +98,11 @@
         <TooltipContent>{{ $t('replyBox.generateReply') }}</TooltipContent>
       </Tooltip>
     </div>
-    <div v-if="showSendButton" class="ml-auto flex items-center gap-2">
+    <div v-if="showSendButton" class="reply-box-send-actions ml-auto flex items-center gap-2">
       <slot name="before-send" />
       <div class="flex items-center rounded-md shadow-sm">
         <Button
-          class="h-8 max-md:h-11 px-4 rounded-r-none"
+          class="reply-box-send h-8 max-md:h-11 px-4 rounded-r-none"
           @click="handleSend"
           :disabled="!enableSend"
           :isLoading="isSending"

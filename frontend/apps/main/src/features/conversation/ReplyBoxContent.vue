@@ -1,28 +1,28 @@
 <template>
   <div
     class="reply-box-content flex min-h-0 flex-col h-full"
-    :class="{ 'reply-box-content-inline max-h-[600px]': !isFullscreen }"
+    :class="{ 'reply-box-content-inline max-h-[600px]': !isFullscreen, 'duo-pwa-reply-box': isDuoPwa }"
   >
     <!-- Message type and composer controls -->
     <div
       class="reply-box-header flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5"
       :class="{ 'mb-4': !isFullscreen, 'border-b border-border pb-4': isFullscreen }"
     >
-      <Tabs v-model="messageType" class="rounded-lg">
-        <TabsList>
+      <Tabs v-model="messageType" class="reply-box-modes rounded-lg">
+        <TabsList class="reply-box-mode-list">
           <TabsTrigger
             v-if="canSendReply"
             value="reply"
-            class="max-md:py-2.5"
+            class="reply-box-mode-tab max-md:py-2.5"
           >
-            {{ $t('globals.terms.reply') }}
+            <span class="truncate">{{ $t('globals.terms.reply') }}</span>
           </TabsTrigger>
           <TabsTrigger
             v-if="canSendPrivateNote"
             value="private_note"
-            class="max-md:py-2.5"
+            class="reply-box-mode-tab max-md:py-2.5"
           >
-            {{ $t('globals.terms.privateNote') }}
+            <span class="truncate">{{ $t('globals.terms.privateNote') }}</span>
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -31,12 +31,13 @@
           v-if="canSendReply && messageType === 'reply'"
           :key="conversationStore.current?.uuid"
           :disabled="isDraftLoading || isSending || isGenerating"
+          :fit-viewport="isDuoPwa && !isFullscreen"
           @insert="insertEditorContent"
         />
         <Button
           v-if="!isFullscreen"
           type="button"
-          class="text-muted-foreground"
+          class="reply-box-size-button text-muted-foreground"
           variant="ghost"
           :aria-label="t('globals.terms.collapse')"
           @click="emit('minimize')"
@@ -47,7 +48,7 @@
           type="button"
           data-testid="reply-fullscreen-toggle"
           :aria-label="t(isFullscreen ? 'globals.terms.collapse' : 'globals.terms.expand')"
-          class="text-muted-foreground max-md:h-11 max-md:w-11 max-md:p-0"
+          class="reply-box-size-button text-muted-foreground max-md:h-11 max-md:w-11 max-md:p-0"
           variant="ghost"
           @click="toggleFullscreen"
         >
@@ -235,7 +236,7 @@
         <Button
           type="button"
           variant="outline"
-          class="h-8 px-3 max-md:h-11"
+          class="reply-box-clear h-8 px-3 max-md:h-11"
           :disabled="!canClearMessage"
           @click="clearMessage"
         >
@@ -263,6 +264,7 @@ import { hasInlineImage, hasPendingInlineUpload } from '@main/composables/useInl
 import { useConversationStore } from '@main/stores/conversation'
 import { WHATSAPP_CHANNEL } from '@main/features/conversation/whatsappTemplate'
 import { useIsComposerCramped } from '@main/composables/useIsComposerCramped'
+import { hasIPhoneDuoScreen } from '@main/composables/useIPhoneDuoInbox'
 import { Input } from '@shared-ui/components/ui/input'
 import { Button } from '@shared-ui/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@shared-ui/components/ui/tabs'
@@ -410,6 +412,11 @@ const isWhatsAppReply = computed(
 )
 const isCramped = useIsComposerCramped()
 const isTouchPrimary = useMediaQuery('(pointer: coarse)')
+const isStandalone = useMediaQuery('(display-mode: standalone)')
+const isDuoPwa = computed(() =>
+  isTouchPrimary.value && window.devicePixelRatio === 3 && hasIPhoneDuoScreen() &&
+  (isStandalone.value || navigator.standalone === true)
+)
 const emitter = useEmitter()
 const { t } = useI18n()
 const recipientId = useId()
@@ -577,6 +584,59 @@ defineExpose({ focus })
 </script>
 
 <style scoped>
+.duo-pwa-reply-box {
+  container: duo-reply / inline-size;
+}
+
+@container duo-reply (max-width: 25rem) {
+  .reply-box-header {
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+  }
+
+  .reply-box-modes,
+  .reply-box-mode-tab {
+    min-width: 0;
+  }
+
+  .reply-box-mode-list {
+    max-width: 100%;
+    height: 2.75rem;
+    padding-block: 0;
+  }
+
+  .reply-box-mode-tab {
+    min-height: 2.75rem;
+    padding-inline: 0.5rem;
+  }
+
+  .reply-box-size-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+  }
+
+  .reply-box-header :deep(.quick-reply-trigger) {
+    min-height: 2.75rem;
+    max-width: min(8rem, 33cqi);
+    gap: 0.25rem;
+    padding-inline: 0.5rem;
+  }
+
+  .reply-box-clear {
+    padding-inline: 0.5rem;
+  }
+
+  :deep(.reply-box-tools),
+  :deep(.reply-box-send-actions) {
+    gap: 0.25rem;
+  }
+
+  :deep(.reply-box-send) {
+    padding-inline: 0.625rem;
+  }
+}
+
 @media (pointer: coarse) {
   .reply-box-content-inline {
     /* Leave room for the conversation header and recent messages above the composer. */
