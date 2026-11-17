@@ -436,7 +436,7 @@ describe('Live chat inbox form: every field', () => {
 
     cy.contains('button', 'Add announcement').click()
     cy.get('input[placeholder="Title"]').type(`Announcement ${stamp}`)
-    cy.get('input[placeholder="Cover image URL"]').type('https://cypress.test/cover.png')
+    cy.get('input[placeholder="Cover image URL (Optional)"]').should('have.value', '')
     cy.get('input[placeholder="Link URL"]').type('https://cypress.test/read')
 
     cy.contains('button', 'Add external link').click()
@@ -447,6 +447,8 @@ describe('Live chat inbox form: every field', () => {
     cy.wait('@updateInbox').then(({ response }) => {
       const apps = response.body.data.config.home_apps
       expect(apps.map((a) => a.type), 'app order').to.deep.eq(['announcement', 'external_link'])
+      expect(apps[0]).to.include({ title: `Announcement ${stamp}`, url: 'https://cypress.test/read' })
+      expect(apps[0].image_url || '').to.equal('')
     })
 
     cy.visit(`${listPath}/${inboxId}/edit`)

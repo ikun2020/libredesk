@@ -87,7 +87,7 @@ describe('Live chat inbox form', () => {
     cy.openInboxSection('Home screen apps')
     cy.contains('button', 'Add announcement').click()
     cy.get('input[placeholder="Title"]').type(homeAppTitle)
-    cy.get('input[placeholder="Cover image URL"]').type('https://cypress.test/cover.png')
+    cy.get('input[placeholder="Cover image URL (Optional)"]').type('https://cypress.test/cover.png')
     cy.get('input[placeholder="Link URL"]').type('https://cypress.test/announcement')
     cy.get('button[type="submit"]').click()
     cy.wait('@updateInbox').its('response.statusCode').should('eq', 200)

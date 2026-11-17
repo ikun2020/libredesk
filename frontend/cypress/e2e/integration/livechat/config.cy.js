@@ -100,13 +100,14 @@ describe('Live chat widget config applied end to end', () => {
     cy.createLivechatInbox(
       withStart({
         home_apps: [
-          { type: 'announcement', title: 'Cypress announcement', description: 'Read this', url: '' },
+          { type: 'announcement', title: 'Cypress announcement', description: 'Read this', url: 'https://example.test/news' },
           { type: 'external_link', text: 'Cypress docs link', url: 'https://example.test/docs' }
         ]
       })
     ).then((inbox) => {
       cy.openWidget(inbox)
-      cy.widgetBody().contains('Cypress announcement').should('be.visible')
+      cy.widgetBody().contains('Cypress announcement').should('be.visible').closest('a')
+        .should('have.attr', 'href', 'https://example.test/news').find('img').should('not.exist')
       cy.widgetBody().contains('Cypress docs link').should('be.visible')
     })
   })

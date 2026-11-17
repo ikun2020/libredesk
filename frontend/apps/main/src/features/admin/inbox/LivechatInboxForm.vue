@@ -811,7 +811,7 @@
                                     <Input
                                       v-model="item.image_url"
                                       type="url"
-                                      :placeholder="$t('globals.messages.coverImageUrl')"
+                                      :placeholder="`${$t('globals.messages.coverImageUrl')} (${$t('globals.terms.optional', 1)})`"
                                       @change="updateHomeApps"
                                     />
                                     <Input
@@ -2028,7 +2028,7 @@ const isHomeAppEmpty = (item) => {
 const isHomeAppComplete = (item) => {
   if (item.type === 'help') return true
   return item.type === 'announcement'
-    ? Boolean(item.title && item.image_url && item.url)
+    ? Boolean(item.title && item.url)
     : Boolean(item.text && item.url)
 }
 
