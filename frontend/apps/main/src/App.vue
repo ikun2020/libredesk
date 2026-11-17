@@ -103,6 +103,7 @@ import { useSharedViewStore } from './stores/sharedView'
 import { useTagStore } from './stores/tag'
 import { useCustomAttributeStore } from './stores/customAttributes'
 import { useIdleDetection } from './composables/useIdleDetection'
+import { useSessionRenewal } from './composables/useSessionRenewal'
 import { useNotificationStore } from './stores/notification'
 import { useAiPromptStore } from '@main/stores/aiPrompt'
 import { useViewStore } from './stores/view'
@@ -204,6 +205,7 @@ useEventListener(window, 'focus', refreshNotificationsOnResume)
 
 initWS()
 useIdleDetection()
+useSessionRenewal()
 
 // Unlock audio on first user interaction (browser autoplay policy)
 const unlockAudio = () => {

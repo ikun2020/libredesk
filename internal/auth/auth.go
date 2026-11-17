@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	defaultSessionLifetime = 9 * time.Hour
+	defaultSessionLifetime = 72 * time.Hour
 	sessionKeyPrefix       = "session:"
 	userSessionKeyPrefix   = "user_sessions:"
 )
@@ -40,6 +40,21 @@ var (
 	ErrOIDCInvalidClient    = errors.New("oidc provider rejected client credentials")
 	ErrOIDCEmailNotVerified = errors.New("oidc email is not verified")
 )
+
+// Refresh only an existing authenticated session, without recreating revoked keys.
+var renewSessionScript = redis.NewScript(`
+local session = redis.call('HMGET', KEYS[1], 'id', 'indexed')
+if session[1] ~= ARGV[1] or session[2] ~= '1' or
+    redis.call('PTTL', KEYS[1]) < 0 or redis.call('SISMEMBER', KEYS[2], ARGV[2]) == 0 then
+    return 0
+end
+local lifetime = tonumber(ARGV[3])
+redis.call('PEXPIRE', KEYS[1], lifetime)
+if redis.call('PTTL', KEYS[2]) < lifetime then
+    redis.call('PEXPIRE', KEYS[2], lifetime)
+end
+return 1
+`)
 
 // OIDCclaim holds OIDC token claims data
 type OIDCclaim struct {
@@ -346,6 +361,35 @@ func (a *Auth) SaveSession(user amodels.User, r *fastglue.Request) error {
 		return err
 	}
 	return nil
+}
+
+// RenewSession extends an authenticated session after client activity.
+func (a *Auth) RenewSession(userID int, r *fastglue.Request) (time.Duration, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if userID <= 0 {
+		return 0, simplesessions.ErrInvalidSession
+	}
+	sess, err := a.sess.Acquire(r.RequestCtx, r, r)
+	if err != nil {
+		return 0, err
+	}
+	id := strconv.Itoa(userID)
+	lifetime := a.cfg.SessionLifetime
+	renewed, err := renewSessionScript.Run(r.RequestCtx, a.rd,
+		[]string{sessionKeyPrefix + sess.ID(), userSessionKeyPrefix + id},
+		id, sess.ID(), max(1, lifetime.Milliseconds())).Int()
+	if err != nil {
+		return 0, err
+	}
+	if renewed == 0 {
+		return 0, simplesessions.ErrInvalidSession
+	}
+	if err := sess.WriteCookie(sess.ID()); err != nil {
+		return 0, err
+	}
+	return min(time.Minute, lifetime/2), nil
 }
 
 // SetSessionValues preserves an existing session and creates one only when the browser has no valid session.

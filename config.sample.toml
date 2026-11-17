@@ -26,8 +26,8 @@ socket = ""
 client_ip_header = ""
 # Do NOT disable secure cookies in production environment if you don't know exactly what you're doing!
 disable_secure_cookies = false
-# Session lifetime duration.
-session_lifetime = "9h"
+# Session lifetime after login or agent activity.
+session_lifetime = "72h"
 # Request read and write timeouts.
 read_timeout = "60s"
 write_timeout = "60s"

@@ -157,6 +157,7 @@ const login = (data) => http.post(`/api/v1/auth/login`, data, {
   }
 })
 const logout = () => http.post(`/api/v1/auth/logout`)
+const renewSession = (signal) => http.post('/api/v1/auth/renew', undefined, { signal })
 const getAutomationRules = (type) =>
   http.get(`/api/v1/automations/rules`, {
     params: { type: type }
@@ -675,6 +676,7 @@ export default {
  getCampaignStats,
   login,
   logout,
+  renewSession,
   deleteUser,
   importAgents,
   getAgentImportStatus,

@@ -295,6 +295,115 @@ func TestSessionIndexPreservesLongerSessionLifetime(t *testing.T) {
 	requireSession(t, shorter, second, 0 /** wantID **/)
 }
 
+func TestRenewSessionExtendsDefaultLifetimeAndCookie(t *testing.T) {
+	a, rd, mr := sessionAuthForTest(t, 0)
+	a, err := New(Config{SecureCookies: true}, a.i18n, rd, a.logger, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const lifetime = 72 * time.Hour
+	active := saveTestSession(t, a, 1)
+	idle := saveTestSession(t, a, 1)
+	if ttl := mr.TTL(sessionKeyPrefix + active); ttl != lifetime {
+		t.Fatalf("initial TTL = %v, want %v", ttl, lifetime)
+	}
+	mr.FastForward(71 * time.Hour)
+	requireSession(t, a, idle, 1)
+	if ttl := mr.TTL(sessionKeyPrefix + idle); ttl != time.Hour {
+		t.Fatalf("passive validation renewed idle session: TTL = %v", ttl)
+	}
+
+	r := sessionRequest(active)
+	next, err := a.RenewSession(1, r)
+	if err != nil || next != time.Minute {
+		t.Fatalf("renew session: next=%v err=%v", next, err)
+	}
+	var cookie fasthttp.Cookie
+	cookie.SetKey("libredesk_session")
+	if !r.RequestCtx.Response.Header.Cookie(&cookie) || string(cookie.Value()) != active ||
+		cookie.MaxAge() != int(lifetime.Seconds()) || !cookie.HTTPOnly() ||
+		!cookie.Secure() || cookie.SameSite() != fasthttp.CookieSameSiteLaxMode {
+		t.Fatal("renewal did not preserve the authenticated cookie and its security attributes")
+	}
+	for _, key := range []string{sessionKeyPrefix + active, userSessionKeyPrefix + "1"} {
+		if ttl := mr.TTL(key); ttl != lifetime {
+			t.Fatalf("renewed TTL of %s = %v, want %v", key, ttl, lifetime)
+		}
+	}
+	mr.FastForward(2 * time.Hour)
+	requireSession(t, a, idle, 0)
+	requireSession(t, a, active, 1)
+	if err := a.DestroyUserSessions(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	requireSession(t, a, active, 0)
+}
+
+func TestRenewSessionPreservesLongerIndexLifetime(t *testing.T) {
+	a, rd, mr := sessionAuthForTest(t, time.Hour)
+	first := saveTestSession(t, a, 1)
+	mr.FastForward(10 * time.Minute)
+	shorter, err := New(Config{SessionLifetime: time.Minute}, a.i18n, rd, a.logger, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := saveTestSession(t, shorter, 1)
+	mr.FastForward(30 * time.Second)
+	next, err := shorter.RenewSession(1, sessionRequest(second))
+	if err != nil || next != 30*time.Second {
+		t.Fatalf("renew custom lifetime: next=%v err=%v", next, err)
+	}
+	if ttl := mr.TTL(sessionKeyPrefix + second); ttl != time.Minute {
+		t.Fatalf("renewed session TTL = %v, want 1m", ttl)
+	}
+	const longerTTL = 49*time.Minute + 30*time.Second
+	for _, key := range []string{sessionKeyPrefix + first, userSessionKeyPrefix + "1"} {
+		if ttl := mr.TTL(key); ttl != longerTTL {
+			t.Fatalf("TTL of %s = %v, want %v", key, ttl, longerTTL)
+		}
+	}
+}
+
+func TestRenewSessionRejectsInvalidSession(t *testing.T) {
+	for _, state := range []string{"missing", "expired", "logged-out", "revoked", "unindexed", "wrong-user"} {
+		t.Run(state, func(t *testing.T) {
+			a, rd, mr := sessionAuthForTest(t, time.Hour)
+			id := saveTestSession(t, a, 1)
+			userID := 1
+			switch state {
+			case "missing":
+				id = ""
+			case "expired":
+				mr.FastForward(time.Hour)
+			case "logged-out":
+				if err := a.DestroySession(sessionRequest(id)); err != nil {
+					t.Fatal(err)
+				}
+			case "revoked":
+				if err := a.DestroyUserSessions(t.Context(), 1); err != nil {
+					t.Fatal(err)
+				}
+			case "unindexed":
+				if err := rd.SRem(t.Context(), userSessionKeyPrefix+"1", id).Err(); err != nil {
+					t.Fatal(err)
+				}
+			case "wrong-user":
+				userID = 2
+			}
+			keys := len(mr.Keys())
+			ttl := mr.TTL(sessionKeyPrefix + id)
+			r := sessionRequest(id)
+			if _, err := a.RenewSession(userID, r); !errors.Is(err, simplesessions.ErrInvalidSession) {
+				t.Fatalf("session renewal error = %v, want invalid session", err)
+			}
+			if len(mr.Keys()) != keys || mr.TTL(sessionKeyPrefix+id) != ttl ||
+				len(r.RequestCtx.Response.Header.Peek("Set-Cookie")) != 0 {
+				t.Fatal("invalid session renewal changed stored state or issued a cookie")
+			}
+		})
+	}
+}
+
 func TestSessionIndexFailureDoesNotAuthenticate(t *testing.T) {
 	a, rd, _ := sessionAuthForTest(t, time.Hour)
 	if err := rd.Set(t.Context(), userSessionKeyPrefix+"1", "wrong type", 0 /** expiration **/).Err(); err != nil {

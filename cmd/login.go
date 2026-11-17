@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
+
 	amodels "github.com/abhinavxd/libredesk/internal/auth/models"
 	"github.com/abhinavxd/libredesk/internal/envelope"
 	"github.com/abhinavxd/libredesk/internal/httputil"
 	"github.com/valyala/fasthttp"
 	"github.com/zerodha/fastglue"
+	"github.com/zerodha/simplesessions/v3"
 )
 
 type loginRequest struct {
@@ -79,6 +82,25 @@ func handleLogin(r *fastglue.Request) error {
 	}
 
 	return r.SendEnvelope(user)
+}
+
+// handleRenewSession extends the current browser session after agent activity.
+func handleRenewSession(r *fastglue.Request) error {
+	app := r.Context.(*App)
+	if r.RequestCtx.UserValue("auth_method") != authMethodSession {
+		return r.SendErrorEnvelope(fasthttp.StatusForbidden, app.i18n.T("status.deniedPermission"), nil, envelope.PermissionError)
+	}
+
+	user := r.RequestCtx.UserValue("user").(amodels.User)
+	renewAfter, err := app.auth.RenewSession(user.ID, r)
+	if errors.Is(err, simplesessions.ErrInvalidSession) {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, app.i18n.T("auth.invalidOrExpiredSession"), nil, envelope.GeneralError)
+	}
+	if err != nil {
+		app.lo.Error("error renewing login session", "user_id", user.ID, "error", err)
+		return sendErrorEnvelope(r, envelope.NewError(envelope.GeneralError, app.i18n.T("globals.messages.somethingWentWrong"), nil))
+	}
+	return r.SendEnvelope(map[string]int64{"renew_after_ms": renewAfter.Milliseconds()})
 }
 
 // handleLogout logs out the user and redirects to the dashboard.
