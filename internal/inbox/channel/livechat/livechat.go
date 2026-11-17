@@ -600,17 +600,26 @@ func (lc *LiveChat) BroadcastTypingToClients(conversationUUID string, contactID 
 
 // BroadcastMessageToClients broadcasts a new message to specific widget clients.
 func (lc *LiveChat) BroadcastMessageToClients(conversationUUID string, contactID int, messageData any) {
+	lc.broadcastContactMessage(contactID, "new_message", messageData)
+}
+
+// BroadcastMessageUpdateToClients delivers an edit or recall to the conversation's contact.
+func (lc *LiveChat) BroadcastMessageUpdateToClients(contactID int, messageData any) {
+	lc.broadcastContactMessage(contactID, "message_update", messageData)
+}
+
+func (lc *LiveChat) broadcastContactMessage(contactID int, messageType string, messageData any) {
 	lc.clientsMutex.RLock()
 	defer lc.clientsMutex.RUnlock()
 
 	msg := map[string]any{
-		"type": "new_message",
+		"type": messageType,
 		"data": messageData,
 	}
 
 	messageJSON, err := json.Marshal(msg)
 	if err != nil {
-		lc.lo.Error("failed to marshal new message for widget broadcast", "error", err)
+		lc.lo.Error("failed to marshal widget message broadcast", "type", messageType, "error", err)
 		return
 	}
 

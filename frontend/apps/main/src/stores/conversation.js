@@ -572,9 +572,12 @@ export const useConversationStore = defineStore('conversation', () => {
     return time > 0 && time > messages.data.getLatestPersistedAt(uuid)
   }
 
-  async function fetchRecentMessages (load) {
+  async function fetchRecentMessages (load, reloadHistory) {
     const { uuid } = load
     const latestFetchedAt = messages.data.getLatestFetchedAt(uuid)
+    const minimumPages = reloadHistory ? messages.data.getLastFetchedPage(uuid) : 1
+    const historyTail = reloadHistory ? messages.data.getHistoryTail(uuid) : undefined
+    let reachedHistoryTail = !historyTail
     const pages = []
     for (let page = 1; ; page++) {
       const response = await api.getConversationMessages(uuid, { page, page_size: MESSAGE_LIST_PAGE_SIZE })
@@ -582,20 +585,24 @@ export const useConversationStore = defineStore('conversation', () => {
       const result = response.data?.data || {}
       const results = result.results || []
       pages.push({ page, results, totalPages: result.total_pages })
+      reachedHistoryTail ||= results.some(message => message.uuid === historyTail)
       // After a longer pause, continue until the new pages meet the cached history.
-      if (!latestFetchedAt || !results.length || page >= (result.total_pages || 1) ||
-          results.some(message => Date.parse(message.created_at) <= latestFetchedAt)) break
+      if (!results.length || page >= (result.total_pages || 1) ||
+          (page >= minimumPages && reachedHistoryTail && (!latestFetchedAt ||
+            results.some(message => Date.parse(message.created_at) <= latestFetchedAt)))) break
     }
 
     const newestAdded = pages.flatMap(page => page.results)
-      .find(message => !messages.data.hasMessage(uuid, message.uuid))
+      .find(message => !message.recalled_at && !messages.data.hasMessage(uuid, message.uuid) &&
+        (!reloadHistory || Date.parse(message.created_at) > latestFetchedAt))
+    let changed = false
     for (const { page, results, totalPages } of pages) {
-      messages.data.addMessages(uuid, results, page, totalPages)
+      changed = messages.data.addMessages(uuid, results, page, totalPages) || changed
     }
     staleConversationUUIDs.delete(uuid)
     clearPendingMessages(uuid)
+    if (changed) incrementMessageVersion()
     if (newestAdded) {
-      incrementMessageVersion()
       setTimeout(() => {
         emitter.emit(EMITTER_EVENTS.NEW_MESSAGE, { conversation_uuid: uuid, message: newestAdded })
       }, 100)
@@ -609,12 +616,16 @@ export const useConversationStore = defineStore('conversation', () => {
     messages.fetching = false
     messages.fetchingLatest = false
     const cachedHistory = messages.data.getLastFetchedPage(uuid) > 0
-    const listTimestamp = conversations.data.find(conversation => conversation.uuid === uuid)?.last_message_at
+    const listRow = conversations.data.find(conversation => conversation.uuid === uuid)
+    const listTimestamp = listRow?.last_message_at
+    const detail = conversation.data?.uuid === uuid ? conversation.data : conversationDataCache.get(uuid)
+    // Edits and older recalls keep the last-send timestamp unchanged, so revalidate cached chat pages.
+    const reloadHistory = (detail?.inbox_channel || listRow?.inbox_channel) === 'livechat'
     if (!fetchNextPage && cachedHistory &&
-        (refresh || staleConversationUUIDs.has(uuid) || hasNewerMessages(uuid, listTimestamp))) {
+        (reloadHistory || refresh || staleConversationUUIDs.has(uuid) || hasNewerMessages(uuid, listTimestamp))) {
       messages.fetchingLatest = true
       try {
-        await fetchRecentMessages(load)
+        await fetchRecentMessages(load, reloadHistory)
       } catch (error) {
         if (activeMessageLoad !== load) return
         const result = handleHTTPError(error)
@@ -695,7 +706,8 @@ export const useConversationStore = defineStore('conversation', () => {
         messages.data.addMessage(conversationUUID, newMsg)
         messages.pending.delete(messageUUID)
         incrementMessageVersion()
-        return newMsg
+        const cached = messages.data.getMessage(conversationUUID, messageUUID)
+        return cached?.recalled_at ? undefined : cached
       }
     } catch (error) {
       emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
@@ -727,6 +739,28 @@ export const useConversationStore = defineStore('conversation', () => {
         description: handleHTTPError(error).message
       })
     }
+  }
+
+  async function updateLiveChatMessage (request) {
+    try {
+      const response = await request()
+      mergeMessageUpdate(response.data.data)
+      return true
+    } catch (error) {
+      emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
+        variant: 'destructive',
+        description: handleHTTPError(error).message
+      })
+      return false
+    }
+  }
+
+  function editLiveChatMessage (conversationUUID, messageUUID, content) {
+    return updateLiveChatMessage(() => api.editLiveChatMessage(conversationUUID, messageUUID, content))
+  }
+
+  function recallLiveChatMessage (conversationUUID, messageUUID) {
+    return updateLiveChatMessage(() => api.recallLiveChatMessage(conversationUUID, messageUUID))
   }
 
   function fetchNextConversations () {
@@ -1221,6 +1255,14 @@ export const useConversationStore = defineStore('conversation', () => {
 
   function mergeMessageUpdate (data) {
     const { conversation_uuid, uuid, ...fields } = data
+    if (fields.edited_at || fields.recalled_at) {
+      if (messages.data.hasConversation(conversation_uuid) ||
+          activeMessageLoad?.uuid === conversation_uuid ||
+          conversation.data?.uuid === conversation_uuid) {
+        if (messages.data.applyPublicMessageUpdate(conversation_uuid, data)) incrementMessageVersion()
+      }
+      return
+    }
     const message = messages.data.getMessage(conversation_uuid, uuid)
     if (!message) return
     const statusChanged = fields.status && fields.status !== message.status
@@ -1525,6 +1567,8 @@ export const useConversationStore = defineStore('conversation', () => {
     removeDraft,
     hasDraft,
     deleteMessage,
+    editLiveChatMessage,
+    recallLiveChatMessage,
     conversationHasDraft,
     conversationDraftPreview,
     getMediaPreview,

@@ -182,6 +182,9 @@ func handleServeMedia(r *fastglue.Request) error {
 	)
 
 	media, err := getMediaByUUID(app, uuid)
+	if err == nil && media.IsRecalledMessageAttachment() {
+		err = envelope.NewError(envelope.NotFoundError, app.i18n.T("globals.messages.notFound"), nil)
+	}
 	if err != nil {
 		// Anonymous probes must not distinguish missing media from existing private media.
 		if authMethod == authMethodPublic {
@@ -301,7 +304,7 @@ func getUnassociatedMedia(app *App, ids []int, userID int) ([]mmodels.Media, err
 	out := make([]mmodels.Media, 0, len(all))
 	seen := make(map[int]bool, len(all))
 	for _, m := range all {
-		if !m.UploadedByUser(userID) || (m.Model.String != "" && m.Model.String != mmodels.ModelMessages) {
+		if !m.UploadedByUser(userID) || m.IsRecalledMessageAttachment() || (m.Model.String != "" && m.Model.String != mmodels.ModelMessages) {
 			return nil, envelope.NewError(envelope.PermissionError, app.i18n.T("status.deniedPermission"), nil)
 		}
 		if seen[m.ID] {

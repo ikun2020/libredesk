@@ -93,6 +93,7 @@ type ContinuityUnreadMessage struct {
 }
 
 type LastChatMessage struct {
+	UUID        string                 `db:"uuid" json:"uuid"`
 	Attachments attachment.Attachments `db:"attachments" json:"attachments"`
 	Content     string                 `db:"content" json:"content"`
 	CreatedAt   time.Time              `db:"created_at" json:"created_at"`
@@ -118,6 +119,8 @@ type ChatMessage struct {
 	Status           string                 `json:"status"`
 	ConversationUUID string                 `json:"conversation_uuid"`
 	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	EditedAt         *time.Time             `json:"edited_at,omitempty"`
 	Content          string                 `json:"content"`
 	TextContent      string                 `json:"text_content"`
 	ContentType      string                 `json:"content_type"`
@@ -345,6 +348,8 @@ type Message struct {
 	ID                int                    `db:"id" json:"id"`
 	CreatedAt         time.Time              `db:"created_at" json:"created_at"`
 	UpdatedAt         time.Time              `db:"updated_at" json:"updated_at"`
+	EditedAt          *time.Time             `db:"edited_at" json:"edited_at,omitempty"`
+	RecalledAt        *time.Time             `db:"recalled_at" json:"recalled_at,omitempty"`
 	UUID              string                 `db:"uuid" json:"uuid"`
 	Type              string                 `db:"type" json:"type"`
 	Status            string                 `db:"status" json:"status"`

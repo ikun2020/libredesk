@@ -65,7 +65,7 @@ func handleGetMessages(r *fastglue.Request) error {
 		return sendErrorEnvelope(r, err)
 	}
 
-	messages, pageSize, err := app.conversation.GetConversationMessages(uuid, page, pageSize, private, msgTypes)
+	messages, pageSize, err := app.conversation.GetAgentConversationMessages(uuid, page, pageSize, private, msgTypes)
 	if err != nil {
 		return sendErrorEnvelope(r, err)
 	}

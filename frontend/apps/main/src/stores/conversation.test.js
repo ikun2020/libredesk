@@ -94,6 +94,47 @@ describe('recovering missed conversation messages', () => {
     expect(store.conversationMessages.map(message => message.uuid)).toEqual([older.uuid, oldMessage.uuid, reply.uuid, activity.uuid])
     expect(store.currentConversationHasMoreMessages).toBe(true)
   })
+
+  it('refreshes edits and recalls on previously loaded chat pages without shifting page offsets', async () => {
+    const store = setup()
+    store.conversation.data.inbox_channel = 'livechat'
+    const older = { ...oldMessage, uuid: 'earlier-chat', content: 'Original' }
+    const recalled = { ...oldMessage, created_at: reply.created_at, content: 'Removed' }
+    store.messages.data.purgeConversation('conversation-a')
+    store.messages.data.addMessages('conversation-a', [recalled], 1, 3)
+    store.messages.data.addMessages('conversation-a', [older], 2, 3)
+    api.getConversationMessages
+      .mockResolvedValueOnce(page([activity], 1, 4))
+      .mockResolvedValueOnce(page([{ ...recalled, content: '', recalled_at: '2026-01-01T00:03:00Z' }], 2, 4))
+      .mockResolvedValueOnce(page([{ ...older, content: 'Corrected', edited_at: '2026-01-01T00:02:00Z' }], 3, 4))
+      .mockResolvedValueOnce(page([{ ...older, uuid: 'oldest-chat', created_at: '2025-12-31T23:58:00Z' }], 4, 4))
+
+    await store.fetchMessages('conversation-a')
+    expect(store.conversationMessages).toEqual([expect.objectContaining({ uuid: older.uuid, content: 'Corrected' }), activity])
+    await store.fetchNextMessages()
+    expect(api.getConversationMessages.mock.calls.map(([, params]) => params.page)).toEqual([1, 2, 3, 4])
+    expect(store.conversationMessages.map(message => message.uuid)).toEqual(['oldest-chat', older.uuid, activity.uuid])
+  })
+
+  it('ignores older edits and keeps a recall ahead of in-flight history or edit responses', async () => {
+    const store = setup()
+    const message = { ...oldMessage, conversation_uuid: 'conversation-a' }
+    store.messages.data.purgeConversation('conversation-a')
+    store.messages.data.addMessages('conversation-a', [{ ...message }], 1, 1)
+    const edit = { ...message, content: 'Current', edited_at: '2026-01-01T00:01:00.123456Z' }
+    store.mergeMessageUpdate(edit)
+    store.mergeMessageUpdate({ ...edit, content: 'Older', edited_at: '2026-01-01T00:01:00.123455Z' })
+    expect(store.conversationMessages[0].content).toBe('Current')
+
+    const pending = Promise.withResolvers()
+    api.getConversationMessages.mockReturnValueOnce(pending.promise)
+    const request = store.fetchMessages('conversation-a', false, true)
+    store.mergeMessageUpdate({ ...message, recalled_at: '2026-01-01T00:02:00Z' })
+    pending.resolve(page([message]))
+    await request
+    store.mergeMessageUpdate(edit)
+    expect(store.conversationMessages).toEqual([])
+  })
 })
 
 it('keeps the latest selection in control of loading and renders it as soon as both responses arrive', async () => {

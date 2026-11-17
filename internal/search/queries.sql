@@ -99,6 +99,7 @@ LEFT JOIN inboxes ON conversations.inbox_id = inboxes.id
 LEFT JOIN conversation_statuses ON conversations.status_id = conversation_statuses.id
 LEFT JOIN conversation_priorities ON conversations.priority_id = conversation_priorities.id
 WHERE conversation_messages.type != 'activity'
+  AND conversation_messages.meta->>'recalled_at' IS NULL
   AND conversation_messages.text_content ILIKE $10 ESCAPE '\'
   AND $3
   AND (

@@ -9,6 +9,7 @@ export const WS_EVENT = {
   TYPING: 'typing',
   ERROR: 'error',
   NEW_MESSAGE: 'new_message',
+  MESSAGE_UPDATE: 'message_update',
   STATUS: 'status',
   JOINED: 'joined',
   PONG: 'pong',
@@ -123,6 +124,9 @@ export class WidgetWebSocketClient {
           if (isFromAgent && (!isViewingConversation || document.hidden)) {
             playNotificationSound()
           }
+        },
+        [WS_EVENT.MESSAGE_UPDATE]: () => {
+          if (data.data) chatStore.applyMessageUpdate(data.data)
         },
         [WS_EVENT.ERROR]: () => {
           console.error('Widget WebSocket error:', data.data)

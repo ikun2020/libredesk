@@ -12,7 +12,7 @@
     >
       <EditorToolbar
         :editor="editor"
-        show-ai
+        :show-ai="showAI"
         @open-link="linkDialog?.open()"
         @ai-generation-change="emit('aiGenerationChange', $event)"
       />
@@ -41,6 +41,8 @@ const props = defineProps({
   insertContent: String,
   messageType: String,
   autoFocus: { type: Boolean, default: true },
+  broadcastTyping: { type: Boolean, default: true },
+  showAI: { type: Boolean, default: true },
   disabled: { type: Boolean, default: false },
   sendOnEnter: { type: Boolean, default: false },
   enableMentions: { type: Boolean, default: false },
@@ -100,7 +102,7 @@ const { editor, extractMentions, focus } = useTextEditor({
   },
   onToggleMessageType: () => emit('toggleMessageType'),
   onUpdate: () => {
-    startTyping()
+    if (props.broadcastTyping) startTyping()
     if (props.enableMentions) emit('mentionsChanged', extractMentions())
   },
   onBlur: stopTyping,

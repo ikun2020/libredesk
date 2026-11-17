@@ -57,24 +57,33 @@
         :class="{ 'flex justify-end items-center gap-2': isOutgoing }"
         style="contain: inline-size"
       >
-        <!-- Delete note menu (private notes, appears on hover, left of bubble) -->
+        <!-- Message actions appear on hover or focus, and stay visible on touch screens. -->
         <div
-          v-if="canDeleteNote"
+          v-if="canDeleteNote || canRecall"
           class="flex-shrink-0 transition-opacity duration-200 can-hover:opacity-0 can-hover:group-hover:opacity-100 focus-within:!opacity-100"
         >
-          <DropdownMenu>
+          <DropdownMenu v-model:open="menuOpen">
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" class="w-8 h-8 p-0 text-muted-foreground">
+              <Button
+                variant="ghost"
+                class="w-8 h-8 p-0 text-muted-foreground"
+                :aria-label="t('globals.messages.moreActions')"
+                :disabled="mutationPending"
+              >
                 <MoreHorizontal class="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem v-if="canRecall && editWindowOpen && hasEditableText" @select="openEdit">
+                <Pencil class="mr-2 h-4 w-4" />
+                {{ t('conversation.editMessage') }}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 class="text-destructive focus:text-destructive"
-                @click="alertOpen = true"
+                @select="alertOpen = true"
               >
                 <Trash2 class="mr-2 h-4 w-4" />
-                {{ t('conversation.deletePrivateNote') }}
+                {{ t(canDeleteNote ? 'conversation.deletePrivateNote' : 'conversation.recallMessage') }}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -179,6 +188,9 @@
 
             <!-- Status Icons (outgoing only) -->
             <div v-if="isOutgoing" class="flex items-center space-x-2 mt-2 self-end">
+              <span v-if="message.edited_at" class="text-xs text-muted-foreground">
+                {{ t('conversation.messageEdited') }}
+              </span>
               <Lock :size="12" v-if="isPrivateMessage" class="text-muted-foreground" />
               <span v-if="statusCheckTimedOut" class="text-xs text-muted-foreground" role="status">
                 {{ t('conversation.sendStatusUnconfirmed') }}
@@ -258,15 +270,47 @@
       <AlertDialogHeader>
         <AlertDialogTitle>{{ t('globals.messages.areYouAbsolutelySure') }}</AlertDialogTitle>
         <AlertDialogDescription>
-          {{ t('conversation.deletePrivateNoteConfirmation') }}
+          {{ t(message.private ? 'conversation.deletePrivateNoteConfirmation' : 'conversation.recallMessageConfirmation') }}
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>{{ t('globals.messages.cancel') }}</AlertDialogCancel>
-        <AlertDialogAction variant="destructive" @click="deleteNote">{{ t('globals.messages.delete') }}</AlertDialogAction>
+        <AlertDialogAction variant="destructive" @click="confirmRemoval">
+          {{ t(message.private ? 'globals.messages.delete' : 'conversation.recallMessage') }}
+        </AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
+
+  <Dialog :open="editOpen" @update:open="onEditOpenChange">
+    <DialogContent
+      :hide-close-button="mutationPending"
+      :aria-describedby="undefined"
+      @open-auto-focus.prevent
+    >
+      <DialogHeader>
+        <DialogTitle>{{ t('conversation.editMessage') }}</DialogTitle>
+      </DialogHeader>
+      <ConversationEditor
+        v-if="editOpen"
+        v-model:html-content="editHTML"
+        v-model:text-content="editText"
+        class="min-h-24 max-h-[35dvh] rounded-md border p-3"
+        :disabled="mutationPending"
+        :broadcast-typing="false"
+        :show-ai="false"
+        @send="saveEdit"
+      />
+      <DialogFooter>
+        <Button type="button" variant="outline" :disabled="mutationPending" @click="editOpen = false">
+          {{ t('globals.messages.cancel') }}
+        </Button>
+        <Button type="button" :disabled="!canSaveEdit" @click="saveEdit">
+          {{ t('globals.messages.save') }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <script setup>
@@ -285,6 +329,7 @@ import {
   CircleAlert,
   Maximize2,
   Trash2,
+  Pencil,
   MoreHorizontal
 } from 'lucide-vue-next'
 import {
@@ -303,6 +348,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@shared-ui/components/ui/alert-dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@shared-ui/components/ui/dialog'
 import { Button } from '@shared-ui/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
 import { Spinner } from '@shared-ui/components/ui/spinner'
@@ -312,6 +358,7 @@ import { Letter } from 'vue-letter'
 import { allowedCssProperties } from 'lettersanitizer'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 import BubbleAttachmentPreview from '@main/features/conversation/message/attachment/BubbleAttachmentPreview.vue'
+import ConversationEditor from '@main/components/editor/ConversationEditor.vue'
 import MessageEnvelope from './MessageEnvelope.vue'
 import CSATResponseDisplay from './CSATResponseDisplay.vue'
 import api from '@main/api'
@@ -326,6 +373,7 @@ const STRIKE_OPEN_TAG = /<(s|del|strike)(?=[\s>])[^>]*>/gi
 const STRIKE_CLOSE_TAG = /<\/(s|del|strike)\s*>/gi
 
 const COLLAPSE_THRESHOLD_PX = 400
+const MESSAGE_EDIT_WINDOW_MS = 5 * 60 * 1000
 
 const contentWrapperEl = ref(null)
 const isExpandable = ref(false)
@@ -369,13 +417,16 @@ const { t } = useI18n()
 const userStore = useUserStore()
 
 const alertOpen = ref(false)
-
-const deleteNote = () => {
-  const conversationUUID = convStore.current?.uuid
-  if (!conversationUUID) return
-  convStore.deleteMessage(conversationUUID, props.message.uuid)
-  alertOpen.value = false
-}
+const menuOpen = ref(false)
+const editWindowOpen = ref(false)
+const editOpen = ref(false)
+const editHTML = ref('')
+const editText = ref('')
+const originalEditHTML = ref('')
+const mutationPending = ref(false)
+const canSaveEdit = computed(() =>
+  !mutationPending.value && Boolean(editText.value.trim()) && editHTML.value !== originalEditHTML.value
+)
 
 const isSystemUser = computed(() => props.message.author?.email === 'System')
 const isAIAssistant = computed(() => props.message.author?.type === 'ai_assistant')
@@ -445,6 +496,8 @@ const sanitizedContent = computed(() => {
     .replace(STRIKE_CLOSE_TAG, '</span>')
 })
 
+watch(sanitizedContent, measureExpandable, { flush: 'post' })
+
 const nonInlineAttachments = computed(() =>
   props.message.attachments.filter((attachment) => attachment.disposition !== 'inline')
 )
@@ -467,6 +520,73 @@ const canDeleteNote = computed(
     !isDeleted.value &&
     (props.message.sender_id === userStore.userID || userStore.hasAdminRole)
 )
+const canRecall = computed(() => {
+  const message = props.message
+  return convStore.current?.inbox_channel === 'livechat' && isOutgoing.value &&
+    !message.private && !message.recalled_at && message.status === 'sent' &&
+    message.id > 0 && message.sender_type === 'agent' && message.sender_id === userStore.userID &&
+    userStore.can('messages:write') && !isSystemUser.value &&
+    !message.meta?.is_csat && !message.meta?.is_automated &&
+    !message.meta?.continuity_email && !message.meta?.campaign_id
+})
+const hasEditableText = computed(() => Boolean(props.message.text_content?.trim()))
+const editDeadline = computed(() => Date.parse(props.message.created_at) + MESSAGE_EDIT_WINDOW_MS)
+
+watch([menuOpen, editDeadline], ([open, deadline], _, onCleanup) => {
+  const remaining = deadline - Date.now()
+  editWindowOpen.value = open && remaining > 0
+  if (editWindowOpen.value) {
+    const timer = setTimeout(() => { editWindowOpen.value = false }, remaining)
+    onCleanup(() => clearTimeout(timer))
+  }
+}, { flush: 'sync' })
+
+const confirmRemoval = async () => {
+  const conversationUUID = convStore.current?.uuid
+  if (!conversationUUID || mutationPending.value) return
+  if (canDeleteNote.value) {
+    await convStore.deleteMessage(conversationUUID, props.message.uuid)
+    return
+  }
+  if (!canRecall.value) return
+  mutationPending.value = true
+  try {
+    await convStore.recallLiveChatMessage(conversationUUID, props.message.uuid)
+  } finally {
+    mutationPending.value = false
+  }
+}
+
+const openEdit = () => {
+  if (!canRecall.value || !hasEditableText.value || Date.now() >= editDeadline.value) return
+  const { content, content_type, text_content } = props.message
+  editText.value = text_content
+  if (content_type === 'text') {
+    const escaped = document.createElement('div')
+    escaped.textContent = content
+    editHTML.value = `<p>${escaped.innerHTML.replace(/\r\n?|\n/g, '<br>')}</p>`
+  } else {
+    editHTML.value = content
+  }
+  originalEditHTML.value = editHTML.value
+  editOpen.value = true
+}
+
+const onEditOpenChange = (open) => {
+  if (!mutationPending.value) editOpen.value = open
+}
+
+const saveEdit = async () => {
+  const conversationUUID = convStore.current?.uuid
+  if (!conversationUUID || !canRecall.value || !canSaveEdit.value) return
+  mutationPending.value = true
+  try {
+    const saved = await convStore.editLiveChatMessage(conversationUUID, props.message.uuid, editHTML.value)
+    if (saved) editOpen.value = false
+  } finally {
+    mutationPending.value = false
+  }
+}
 const deliveryStatus = computed(() =>
   getMessageDeliveryStatus(props.message, props.direction, convStore.current)
 )

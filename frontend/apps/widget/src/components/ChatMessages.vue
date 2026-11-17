@@ -105,6 +105,9 @@
                 }}
               </div>
               <MessageAttachment class="mt-1" :attachments="message.attachments" />
+              <div v-if="message.edited_at" class="mt-1 text-[10px] text-muted-foreground">
+                {{ t('conversation.messageEdited') }}
+              </div>
 
               <PreChatForm
                 v-if="message.uuid === pendingHandoffMessageUUID"
@@ -221,7 +224,10 @@ const chatStore = useChatStore()
 const proactive = useProactiveStore()
 const messagesContainer = ref(null)
 const contentEl = ref(null)
-const unreadMessages = ref(0)
+const unreadMessageUUIDs = ref(new Set())
+const unreadMessages = computed(() =>
+  chatStore.getCurrentConversationMessages.filter((message) => unreadMessageUUIDs.value.has(message.uuid)).length
+)
 const currentConversationUUID = ref('')
 const quotedTextState = ref({})
 const { t } = useI18n()
@@ -231,7 +237,7 @@ const { hasUserScrolled, scrollToBottom, scrollToOffset, handleScroll } = useSti
   contentEl,
   {
     onArriveBottom: () => {
-      unreadMessages.value = 0
+      unreadMessageUUIDs.value.clear()
     }
   }
 )
@@ -346,7 +352,7 @@ watch(
   (newUUID) => {
     if (!newUUID || currentConversationUUID.value === newUUID) return
     currentConversationUUID.value = newUUID
-    unreadMessages.value = 0
+    unreadMessageUUIDs.value.clear()
     hasUserScrolled.value = false
     nextTick(() => {
       const id = chatStore.previewUnreadUUID
@@ -392,7 +398,7 @@ watch(
     if (isOwnMessage) {
       hasUserScrolled.value = false
     } else if (hasUserScrolled.value) {
-      unreadMessages.value++
+      unreadMessageUUIDs.value.add(newMessage.uuid)
     }
   }
 )

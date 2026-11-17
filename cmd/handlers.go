@@ -79,6 +79,8 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	g.GET("/api/v1/conversations/{uuid}/transcript", perm(handleDownloadConversationTranscript, "messages:read"))
 	g.POST("/api/v1/conversations/{cuuid}/messages", auth(handleSendMessage))
 	g.PUT("/api/v1/conversations/{cuuid}/messages/{uuid}/retry", perm(handleRetryMessage, "messages:write"))
+	g.POST("/api/v1/conversations/{cuuid}/messages/{uuid}/edit", perm(handleEditLiveChatMessage, "messages:write"))
+	g.POST("/api/v1/conversations/{cuuid}/messages/{uuid}/recall", perm(handleRecallLiveChatMessage, "messages:write"))
 	g.DELETE("/api/v1/conversations/{cuuid}/messages/{uuid}", perm(handleDeleteMessage, "messages:write_private"))
 	g.POST("/api/v1/conversations", perm(handleCreateConversation, "conversations:write"))
 	g.PUT("/api/v1/conversations/{uuid}/custom-attributes", auth(handleUpdateConversationCustomAttributes))

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { playNotificationSound } from '@shared-ui/composables/useNotificationSound.js'
 
-const chatStore = { addMessageToConversation: vi.fn(), currentConversation: null }
+const chatStore = { addMessageToConversation: vi.fn(), applyMessageUpdate: vi.fn(), currentConversation: null }
 const widgetStore = {
   setConnectionFailed: vi.fn(),
   setConnecting: vi.fn(),
@@ -113,6 +114,16 @@ describe('Widget websocket client', () => {
       'convo-1',
       expect.objectContaining({ content: 'hello' })
     )
+  })
+
+  test('edits and recalls do not go through new-message notifications', () => {
+    connected()
+    const update = { conversation_uuid: 'convo-1', uuid: 'message-1', recalled_at: '2026-11-17T10:02:00Z' }
+    sockets[0].emit('message', JSON.stringify({ type: 'message_update', data: update }))
+
+    expect(chatStore.applyMessageUpdate).toHaveBeenCalledExactlyOnceWith(update)
+    expect(chatStore.addMessageToConversation).not.toHaveBeenCalled()
+    expect(playNotificationSound).not.toHaveBeenCalled()
   })
 
   test('a superseded socket cannot mark the connection healthy', () => {

@@ -165,7 +165,7 @@ func (m *Manager) MessageSenderWorker(ctx context.Context) {
 // GetAIConversationMessages excludes private messages, surveys and continuity emails before counting and pagination.
 func (m *Manager) GetAIConversationMessages(conversationUUID string, page, pageSize int) ([]models.Message, int, error) {
 	private := false
-	return m.getConversationMessages(conversationUUID, page, pageSize, &private, []string{models.MessageIncoming, models.MessageOutgoing}, true /** excludeCSAT **/)
+	return m.getConversationMessages(conversationUUID, page, pageSize, &private, []string{models.MessageIncoming, models.MessageOutgoing}, true, false)
 }
 
 // sendOutgoingMessage sends an outgoing message.
@@ -394,7 +394,12 @@ func (m *Manager) previousMessagesData(conversationID, messageID int) []previous
 
 // GetConversationMessages retrieves messages for a specific conversation.
 func (m *Manager) GetConversationMessages(conversationUUID string, page, pageSize int, private *bool, msgTypes []string) ([]models.Message, int, error) {
-	return m.getConversationMessages(conversationUUID, page, pageSize, private, msgTypes, false /** excludeCSAT **/)
+	return m.getConversationMessages(conversationUUID, page, pageSize, private, msgTypes, false, false)
+}
+
+// GetAgentConversationMessages preserves offset pagination slots for recalled messages.
+func (m *Manager) GetAgentConversationMessages(conversationUUID string, page, pageSize int, private *bool, msgTypes []string) ([]models.Message, int, error) {
+	return m.getConversationMessages(conversationUUID, page, pageSize, private, msgTypes, false, true)
 }
 
 // GetAllConversationMessages returns the newest messages in a conversation in chronological order, capped at limit; a non-positive limit returns them all.
@@ -1730,6 +1735,8 @@ func (m *Manager) broadcastMessageToWidgetClients(message *models.Message) {
 		Status:           message.Status,
 		ConversationUUID: message.ConversationUUID,
 		CreatedAt:        message.CreatedAt,
+		UpdatedAt:        message.UpdatedAt,
+		EditedAt:         message.EditedAt,
 		Content:          message.Content,
 		TextContent:      message.TextContent,
 		ContentType:      message.ContentType,
@@ -1863,7 +1870,7 @@ func (m *Manager) resolveSendFrom(conversationUUID string, inboxRecord imodels.I
 	return sendable[0], nil
 }
 
-func (m *Manager) getConversationMessages(conversationUUID string, page, pageSize int, private *bool, msgTypes []string, excludeCSAT bool) ([]models.Message, int, error) {
+func (m *Manager) getConversationMessages(conversationUUID string, page, pageSize int, private *bool, msgTypes []string, excludeCSAT, includeRecalled bool) ([]models.Message, int, error) {
 	var (
 		messages = make([]models.Message, 0)
 		qArgs    []any
@@ -1874,7 +1881,7 @@ func (m *Manager) getConversationMessages(conversationUUID string, page, pageSiz
 		typesArg = pq.StringArray(msgTypes)
 	}
 
-	qArgs = append(qArgs, conversationUUID, private, typesArg, excludeCSAT)
+	qArgs = append(qArgs, conversationUUID, private, typesArg, excludeCSAT, includeRecalled)
 	query, pageSize, qArgs, err := m.generateMessagesQuery(m.q.GetMessages, qArgs, page, pageSize)
 	if err != nil {
 		m.lo.Error("error generating messages query", "error", err)
@@ -1884,11 +1891,11 @@ func (m *Manager) getConversationMessages(conversationUUID string, page, pageSiz
 	tx, err := m.db.BeginTxx(context.Background(), &sql.TxOptions{
 		ReadOnly: true,
 	})
-	defer tx.Rollback()
 	if err != nil {
 		m.lo.Error("error preparing get messages query", "error", err)
 		return messages, pageSize, envelope.NewError(envelope.GeneralError, m.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
+	defer tx.Rollback()
 
 	if err := tx.Select(&messages, query, qArgs...); err != nil {
 		m.lo.Error("error fetching conversations", "error", err)

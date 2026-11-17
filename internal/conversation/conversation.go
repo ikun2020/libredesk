@@ -414,6 +414,10 @@ type queries struct {
 	GetReopenableConversationByContact *sqlx.Stmt `query:"get-latest-reopenable-conversation-by-contact-inbox"`
 	DeleteMessage                      *sqlx.Stmt `query:"delete-message"`
 	DeletePrivateMessage               *sqlx.Stmt `query:"delete-private-message"`
+	LockLiveChatMessageConversation    *sqlx.Stmt `query:"lock-livechat-message-conversation"`
+	ChangeLiveChatMessage              *sqlx.Stmt `query:"change-livechat-message"`
+	UnlinkRecalledMessageMedia         *sqlx.Stmt `query:"unlink-recalled-message-media"`
+	RefreshLiveChatMessagePreviews     *sqlx.Stmt `query:"refresh-livechat-message-previews"`
 
 	// Conversation continuity queries.
 	GetOfflineLiveChatConversations *sqlx.Stmt `query:"get-offline-livechat-conversations"`
@@ -572,6 +576,7 @@ func (c *Manager) GetContactUnreadPreviewMessages(contactID, inboxID, limit int)
 	for _, message := range messages {
 		c.SignAvatarURL(&message.Author.AvatarURL)
 		c.SignAttachmentURLs(message.Attachments)
+		c.resolveEditedLiveChatImages(&message)
 		author := message.Author
 		if sender := proactiveSender(message.Meta); sender != "" {
 			author.FirstName = sender
@@ -584,6 +589,8 @@ func (c *Manager) GetContactUnreadPreviewMessages(contactID, inboxID, limit int)
 			Status:           message.Status,
 			ConversationUUID: message.ConversationUUID,
 			CreatedAt:        message.CreatedAt,
+			UpdatedAt:        message.UpdatedAt,
+			EditedAt:         message.EditedAt,
 			Content:          message.Content,
 			TextContent:      message.TextContent,
 			ContentType:      message.ContentType,
@@ -2242,6 +2249,7 @@ func (m *Manager) BuildWidgetConversationResponse(conversation models.Conversati
 			m.SignAvatarURL(&msg.Author.AvatarURL)
 			attachments := msg.Attachments
 			m.SignAttachmentURLs(attachments)
+			m.resolveEditedLiveChatImages(&msg)
 
 			// Strip agent email from widget responses.
 			author := msg.Author
@@ -2256,6 +2264,8 @@ func (m *Manager) BuildWidgetConversationResponse(conversation models.Conversati
 				UUID:             msg.UUID,
 				Status:           msg.Status,
 				CreatedAt:        msg.CreatedAt,
+				UpdatedAt:        msg.UpdatedAt,
+				EditedAt:         msg.EditedAt,
 				Content:          msg.Content,
 				TextContent:      msg.TextContent,
 				ContentType:      msg.ContentType,

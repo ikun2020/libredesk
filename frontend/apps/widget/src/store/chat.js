@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import api from '@widget/api/index.js'
 import { deepMerge } from '@shared-ui/utils/object.js'
+import { compareMessageEditTimes } from '@shared-ui/utils/message-edits.js'
 import { TYPING_RECEIVE_TIMEOUT } from '@shared-ui/composables/useTypingIndicator.js'
 import MessageCache from '@main/utils/conversation-message-cache.js'
 import { useUserStore } from './user.js'
@@ -20,6 +21,8 @@ export const useChatStore = defineStore('chat', () => {
   const isLoadingConversations = ref(false)
   const isLoadingConversation = ref(false)
   const messageCacheVersion = ref(0)
+  const conversationPreviewUpdates = new WeakMap()
+  let messageUpdateVersion = 0
 
   const getCurrentConversationMessages = computed(() => {
     messageCacheVersion.value // Force reactivity tracking
@@ -55,6 +58,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!conv) return
 
     conv.last_message = {
+      uuid: message.uuid,
       attachments: message.attachments || [],
       content: message.text_content !== '' ? message.text_content : message.content,
       created_at: message.created_at,
@@ -122,6 +126,68 @@ export const useChatStore = defineStore('chat', () => {
     messageCacheVersion.value++ // Trigger reactivity
   }
 
+  const applyMessageUpdate = (update) => {
+    const {
+      conversation_uuid: conversationUUID,
+      uuid, content, text_content, content_type, updated_at, edited_at, recalled_at,
+      conversation_last_message, unread_message_count
+    } = update
+    if (!conversationUUID || !uuid || !updated_at) return
+    messageUpdateVersion++
+
+    const patch = { content, text_content, content_type, updated_at, edited_at }
+    const message = messageCache.getMessage(conversationUUID, uuid)
+    const staleMessage = compareMessageEditTimes(message?.updated_at, updated_at) > 0
+    if (recalled_at) {
+      removeMessage(conversationUUID, uuid)
+      if (previewUnreadUUID.value === uuid) previewUnreadUUID.value = null
+    } else if (message && !staleMessage) {
+      messageCache.updateMessage(conversationUUID, uuid, patch)
+      messageCacheVersion.value++
+    }
+
+    const conversation = conversations.value?.find(({ uuid }) => uuid === conversationUUID)
+    if (!conversation) return
+
+    const previews = conversation.unread_messages || []
+    const preview = previews.find((message) => message.uuid === uuid)
+    const stalePreview = compareMessageEditTimes(preview?.updated_at, updated_at) > 0
+    if (recalled_at && preview) {
+      conversation.unread_messages = previews.filter((message) => message.uuid !== uuid)
+    } else if (preview && !stalePreview) {
+      Object.assign(preview, patch)
+    }
+
+    const lastPreviewUpdate = conversationPreviewUpdates.get(conversation)
+    const currentSummary = !staleMessage && !stalePreview &&
+      compareMessageEditTimes(updated_at, lastPreviewUpdate) >= 0 &&
+      compareMessageEditTimes(updated_at, conversation.last_message?.created_at) >= 0
+    if (currentSummary) {
+      conversationPreviewUpdates.set(conversation, updated_at)
+      if (conversation_last_message) conversation.last_message = conversation_last_message
+      if (typeof unread_message_count === 'number') {
+        conversation.unread_message_count = Math.min(conversation.unread_message_count, unread_message_count)
+      }
+    }
+
+    if (recalled_at && (!currentSummary ||
+      (preview && conversation.unread_message_count > conversation.unread_messages.length))) {
+      void fetchConversations(true, true)
+    }
+  }
+
+  // Discard a response that may predate a live edit or recall received while it was loading.
+  const fetchAfterMessageUpdates = async (request) => {
+    const token = userStore.userSessionToken
+    let response, version
+    do {
+      version = messageUpdateVersion
+      response = await request()
+      if (token !== userStore.userSessionToken) return null
+    } while (version !== messageUpdateVersion)
+    return response
+  }
+
   const loadConversation = async (conversationUUID, force = false, silent = false) => {
     if (!conversationUUID) return false
 
@@ -131,16 +197,16 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       if (!silent) isLoadingConversation.value = true
-      const token = userStore.userSessionToken
-      const resp = await api.getChatConversation(conversationUUID)
-      if (token !== userStore.userSessionToken) return false
+      const resp = await fetchAfterMessageUpdates(() => api.getChatConversation(conversationUUID))
+      if (!resp) return false
       const conversation = resp.data.data.conversation
       conversation.business_hours_id = resp.data.data.business_hours_id
       conversation.working_hours_utc_offset = resp.data.data.working_hours_utc_offset
       setCurrentConversation(conversation)
       replaceMessages(resp.data.data.messages)
-      if (resp.data.data.messages.length > 0) {
-        updateConversationListLastMessage(conversationUUID, resp.data.data.messages[0], false)
+      const listItem = conversations.value?.find(({ uuid }) => uuid === conversationUUID)
+      if (listItem && conversation.last_message) {
+        listItem.last_message = conversation.last_message
       }
     } catch (error) {
       console.error('Error fetching conversation:', error)
@@ -154,7 +220,7 @@ export const useChatStore = defineStore('chat', () => {
   const replaceMessages = (newMessages) => {
     const convId = currentConversation.value?.uuid
     if (!convId) return
-    if (Array.isArray(newMessages) && newMessages.length > 0) {
+    if (Array.isArray(newMessages)) {
       messageCache.purgeConversation(convId)
       messageCache.addMessages(convId, newMessages, 1, 1)
     }
@@ -213,15 +279,14 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       if (!silent) isLoadingConversations.value = true
-      const token = userStore.userSessionToken
-      const response = await api.getChatConversations()
-      if (token !== userStore.userSessionToken) return false
+      const response = await fetchAfterMessageUpdates(api.getChatConversations)
+      if (!response) return false
       conversations.value = response.data.data || []
       return true
     } catch {
       return false
     } finally {
-      isLoadingConversations.value = false
+      if (!silent) isLoadingConversations.value = false
     }
   }
 
@@ -290,6 +355,7 @@ export const useChatStore = defineStore('chat', () => {
     addPendingMessage,
     replaceMessage,
     removeMessage,
+    applyMessageUpdate,
     replaceMessages,
     clearMessages,
     setTypingStatus,

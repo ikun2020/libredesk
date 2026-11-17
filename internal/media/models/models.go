@@ -56,6 +56,14 @@ func (m Media) UploadedByUser(userID int) bool {
 	return m.UploadedBy.Valid && m.UploadedBy.Int == userID
 }
 
+// IsRecalledMessageAttachment reports whether a recalled message revoked the attachment.
+func (m Media) IsRecalledMessageAttachment() bool {
+	var metadata struct {
+		MessageRecalled bool `json:"message_recalled"`
+	}
+	return json.Unmarshal(m.Meta, &metadata) == nil && metadata.MessageRecalled
+}
+
 // NormalizeContentType returns the lowercased type/subtype of a Content-Type value, or application/octet-stream if it does not parse.
 func NormalizeContentType(contentType string) string {
 	mediaType, _, err := mime.ParseMediaType(contentType)

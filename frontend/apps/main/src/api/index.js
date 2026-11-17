@@ -344,6 +344,10 @@ const retryMessage = (cuuid, uuid) =>
   http.put(`/api/v1/conversations/${cuuid}/messages/${uuid}/retry`)
 const deleteMessage = (cuuid, uuid) =>
   http.delete(`/api/v1/conversations/${cuuid}/messages/${uuid}`)
+const editLiveChatMessage = (cuuid, uuid, content) =>
+  http.post(`/api/v1/conversations/${cuuid}/messages/${uuid}/edit`, { content })
+const recallLiveChatMessage = (cuuid, uuid) =>
+  http.post(`/api/v1/conversations/${cuuid}/messages/${uuid}/recall`)
 const getConversationMessages = (uuid, params) =>
   http.get(`/api/v1/conversations/${uuid}/messages`, { params, abortOnRoute: true })
 const sendMessage = (uuid, data) =>
@@ -756,6 +760,8 @@ export default {
   sendMessage,
   retryMessage,
   deleteMessage,
+  editLiveChatMessage,
+  recallLiveChatMessage,
   createUser,
   createInbox,
   updateInbox,

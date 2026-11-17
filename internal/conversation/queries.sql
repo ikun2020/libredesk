@@ -87,6 +87,7 @@ SELECT
             '1970-01-01'::TIMESTAMPTZ
         )
         AND (meta IS NULL OR NOT COALESCE((meta->>'continuity_email')::boolean, false))
+        AND meta->>'recalled_at' IS NULL
         LIMIT 10
     ) t
     ) as unread_message_count,
@@ -401,11 +402,8 @@ LIMIT 50;
 -- name: get-chat-conversation
 SELECT
     COALESCE((SELECT json_agg(json_build_object('name', media.filename, 'content_type', media.content_type, 'uuid', media.uuid, 'size', media.size, 'content_id', media.content_id, 'disposition', media.disposition))
-      FROM media WHERE media.model_type = 'messages' AND media.model_id = (
-        SELECT m.id FROM conversation_messages m
-        WHERE m.conversation_id = c.id AND m.private = FALSE AND m.type IN ('incoming', 'outgoing')
-        ORDER BY m.created_at DESC, m.id DESC LIMIT 1
-      )), '[]'::json) AS "last_message.attachments",
+      FROM media WHERE media.model_type = 'messages' AND media.model_id = last_public.id), '[]'::json) AS "last_message.attachments",
+    COALESCE(last_public.uuid::text, '') AS "last_message.uuid",
     COALESCE(c.contact_last_seen_at, c.created_at) AS contact_last_seen_at,
     c.created_at,
     c.uuid,
@@ -413,7 +411,7 @@ SELECT
     cs.name as status,
     COALESCE(cs.category::TEXT, '') AS status_category,
     COALESCE(c.last_interaction, '') as "last_message.content",
-    c.last_interaction_at as "last_message.created_at",
+    COALESCE(c.last_interaction_at, c.created_at) as "last_message.created_at",
     COALESCE(lis.id, 0) AS "last_message.author.id",
     COALESCE(lis.first_name, '') AS "last_message.author.first_name",
     COALESCE(lis.last_name, '') AS "last_message.author.last_name",
@@ -426,6 +424,7 @@ SELECT
            AND unread.created_at > COALESCE(c.contact_last_seen_at, c.created_at)
            AND unread.type = 'outgoing'
            AND unread.private = false
+           AND unread.meta->>'recalled_at' IS NULL
          LIMIT 10
      ) t) AS unread_message_count,
     COALESCE(au.availability_status::TEXT, '') as "assignee.availability_status",
@@ -441,6 +440,15 @@ LEFT JOIN conversation_statuses cs ON c.status_id = cs.id
 LEFT JOIN users au ON c.assigned_user_id = au.id
 LEFT JOIN ai_assistants aa ON aa.user_id = au.id
 LEFT JOIN users lis ON c.last_interaction_sender_id = lis.id
+LEFT JOIN LATERAL (
+    SELECT m.id, m.uuid FROM conversation_messages m
+    WHERE m.conversation_id = c.id AND m.private = false AND m.type IN ('incoming', 'outgoing')
+      AND m.created_at = c.last_interaction_at
+      AND (c.last_interaction_sender_id IS NULL OR m.sender_id = c.last_interaction_sender_id)
+      AND m.meta->>'recalled_at' IS NULL
+      AND COALESCE(m.meta->>'continuity_email', 'false') <> 'true'
+    ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+) last_public ON true
 WHERE c.uuid = $1
   AND inb.deleted_at IS NULL;
 
@@ -448,6 +456,8 @@ WHERE c.uuid = $1
 SELECT
     m.id,
     m.created_at,
+    m.updated_at,
+    (m.meta->>'edited_at')::timestamptz AS edited_at,
     m.status,
     m.type,
     m.content,
@@ -491,6 +501,7 @@ WHERE c.contact_id = $1
   AND m.created_at > COALESCE(c.contact_last_seen_at, c.created_at)
   AND m.type = 'outgoing'
   AND m.private = false
+  AND m.meta->>'recalled_at' IS NULL
   AND u.type IN ('agent', 'ai_assistant')
   AND (m.meta IS NULL OR NOT COALESCE((m.meta->>'continuity_email')::boolean, false))
 ORDER BY m.created_at DESC, m.id DESC
@@ -499,11 +510,8 @@ LIMIT $3;
 -- name: get-contact-chat-conversations
 SELECT
     COALESCE((SELECT json_agg(json_build_object('name', media.filename, 'content_type', media.content_type, 'uuid', media.uuid, 'size', media.size, 'content_id', media.content_id, 'disposition', media.disposition))
-      FROM media WHERE media.model_type = 'messages' AND media.model_id = (
-        SELECT m.id FROM conversation_messages m
-        WHERE m.conversation_id = c.id AND m.private = FALSE AND m.type IN ('incoming', 'outgoing')
-        ORDER BY m.created_at DESC, m.id DESC LIMIT 1
-      )), '[]'::json) AS "last_message.attachments",
+      FROM media WHERE media.model_type = 'messages' AND media.model_id = last_public.id), '[]'::json) AS "last_message.attachments",
+    COALESCE(last_public.uuid::text, '') AS "last_message.uuid",
     COALESCE(c.contact_last_seen_at, c.created_at) AS contact_last_seen_at,
     c.created_at,
     c.uuid,
@@ -511,7 +519,7 @@ SELECT
     cs.name as status,
     COALESCE(cs.category::TEXT, '') AS status_category,
     COALESCE(c.last_interaction, '') as "last_message.content",
-    c.last_interaction_at as "last_message.created_at",
+    COALESCE(c.last_interaction_at, c.created_at) as "last_message.created_at",
     COALESCE(lis.id, 0) AS "last_message.author.id",
     COALESCE(lis.first_name, '') AS "last_message.author.first_name",
     COALESCE(lis.last_name, '') AS "last_message.author.last_name",
@@ -524,6 +532,7 @@ SELECT
            AND unread.created_at > COALESCE(c.contact_last_seen_at, c.created_at)
            AND unread.type = 'outgoing'
            AND unread.private = false
+           AND unread.meta->>'recalled_at' IS NULL
          LIMIT 10
      ) t) AS unread_message_count,
     COALESCE(au.availability_status::TEXT, '') as "assignee.availability_status",
@@ -538,6 +547,15 @@ INNER JOIN users con ON c.contact_id = con.id
 LEFT JOIN conversation_statuses cs ON c.status_id = cs.id
 LEFT JOIN users au ON c.assigned_user_id = au.id
 LEFT JOIN users lis ON c.last_interaction_sender_id = lis.id
+LEFT JOIN LATERAL (
+    SELECT m.id, m.uuid FROM conversation_messages m
+    WHERE m.conversation_id = c.id AND m.private = false AND m.type IN ('incoming', 'outgoing')
+      AND m.created_at = c.last_interaction_at
+      AND (c.last_interaction_sender_id IS NULL OR m.sender_id = c.last_interaction_sender_id)
+      AND m.meta->>'recalled_at' IS NULL
+      AND COALESCE(m.meta->>'continuity_email', 'false') <> 'true'
+    ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+) last_public ON true
 WHERE c.contact_id = $1 AND c.inbox_id = $2
   AND inb.deleted_at IS NULL
   AND con.deleted_at IS NULL
@@ -876,11 +894,100 @@ preview AS (
           SELECT 1 FROM conversation_messages m2
           WHERE m2.conversation_id = d.conversation_id
             AND m2.created_at > d.created_at
+            AND m2.meta->>'recalled_at' IS NULL
       )
     RETURNING c.id
 )
 SELECT EXISTS (SELECT 1 FROM preview) AS preview_updated
 FROM deleted d;
+
+-- name: lock-livechat-message-conversation
+SELECT c.id, c.inbox_id, c.contact_id, c.assigned_user_id, c.assigned_team_id
+FROM conversations c
+JOIN inboxes i ON i.id = c.inbox_id
+WHERE c.uuid = $1 AND i.channel = 'livechat' AND i.deleted_at IS NULL
+FOR NO KEY UPDATE OF c;
+
+-- name: change-livechat-message
+-- $1 is the conversation ID, $2 the message UUID, $3 the agent ID, $4 a recall, and $5-$6 the edited content.
+UPDATE conversation_messages
+SET content = $5,
+    text_content = $6,
+    content_type = CASE WHEN $4 THEN content_type ELSE 'html' END,
+    updated_at = statement_timestamp(),
+    meta = CASE
+        WHEN $4 THEN jsonb_build_object('recalled_at', statement_timestamp())
+        ELSE COALESCE(meta, '{}'::jsonb) || jsonb_build_object('edited_at', statement_timestamp())
+    END
+WHERE conversation_id = $1 AND uuid = $2 AND sender_id = $3
+  AND type = 'outgoing' AND sender_type = 'agent' AND private = false AND status = 'sent'
+  AND meta->>'recalled_at' IS NULL
+  AND COALESCE(meta->>'is_csat', 'false') <> 'true'
+  AND COALESCE(meta->>'is_automated', 'false') <> 'true'
+  AND COALESCE(meta->>'continuity_email', 'false') <> 'true'
+  AND meta->>'campaign_id' IS NULL
+  AND ($4 OR (text_content ~ '[^[:space:]]' AND created_at >= statement_timestamp() - INTERVAL '5 minutes'))
+RETURNING id, uuid, created_at, updated_at, content, text_content, COALESCE(content_type::text, '') AS content_type, meta,
+          (meta->>'edited_at')::timestamptz AS edited_at, (meta->>'recalled_at')::timestamptz AS recalled_at;
+
+-- name: unlink-recalled-message-media
+UPDATE media
+SET model_id = 0,
+    meta = COALESCE(meta, '{}'::jsonb) || '{"message_recalled":true}'::jsonb
+WHERE model_type = 'messages' AND model_id = $1;
+
+-- name: refresh-livechat-message-previews
+-- Rebuild only the snapshots that pointed at the changed message. Notes and activities may have replaced the staff snapshot.
+WITH current_snapshots AS (
+    SELECT (last_message_at = $2 AND last_message_sender_id = $3) IS TRUE AS staff,
+           (last_interaction_at = $2 AND last_interaction_sender_id = $3) IS TRUE AS visitor
+    FROM conversations
+    WHERE id = $1
+), previews AS (
+    SELECT scope.visitor,
+           latest.created_at, latest.sender_type, latest.sender_id,
+           CASE
+             WHEN latest.id IS NULL THEN NULL
+             WHEN latest.meta->>'is_csat' = 'true' THEN 'Please rate your experience with us'
+             WHEN latest.text_content ~ '[^[:space:]]' THEN latest.text_content
+             ELSE COALESCE((
+                 SELECT CASE
+                     WHEN media.content_type LIKE 'image/%' THEN $4
+                     WHEN media.content_type LIKE 'video/%' THEN $5
+                     WHEN media.content_type LIKE 'audio/%' THEN $6
+                     ELSE $7
+                 END
+                 FROM media WHERE media.model_type = 'messages' AND media.model_id = latest.id
+                 ORDER BY media.id LIMIT 1
+               ), latest.text_content)
+           END AS content
+    FROM current_snapshots snapshot
+    CROSS JOIN (VALUES (false), (true)) AS scope(visitor)
+    LEFT JOIN LATERAL (
+        SELECT m.id, m.created_at, m.sender_type, m.sender_id, m.text_content, m.meta
+        FROM conversation_messages m
+        WHERE m.conversation_id = $1
+          AND m.meta->>'recalled_at' IS NULL
+          AND COALESCE(m.meta->>'continuity_email', 'false') <> 'true'
+          AND (NOT scope.visitor OR (m.private = false AND m.type IN ('incoming', 'outgoing')))
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+    ) latest ON true
+    WHERE CASE WHEN scope.visitor THEN snapshot.visitor ELSE snapshot.staff END
+)
+UPDATE conversations c
+SET last_message = CASE WHEN snapshot.staff THEN (SELECT content FROM previews WHERE NOT visitor) ELSE c.last_message END,
+    last_message_at = CASE WHEN snapshot.staff THEN (SELECT created_at FROM previews WHERE NOT visitor) ELSE c.last_message_at END,
+    last_message_sender = CASE WHEN snapshot.staff THEN (SELECT sender_type FROM previews WHERE NOT visitor) ELSE c.last_message_sender END,
+    last_message_sender_id = CASE WHEN snapshot.staff THEN (SELECT sender_id FROM previews WHERE NOT visitor) ELSE c.last_message_sender_id END,
+    last_interaction = CASE WHEN snapshot.visitor THEN (SELECT content FROM previews WHERE visitor) ELSE c.last_interaction END,
+    last_interaction_at = CASE WHEN snapshot.visitor THEN (SELECT created_at FROM previews WHERE visitor) ELSE c.last_interaction_at END,
+    last_interaction_sender = CASE WHEN snapshot.visitor THEN (SELECT sender_type FROM previews WHERE visitor) ELSE c.last_interaction_sender END,
+    last_interaction_sender_id = CASE WHEN snapshot.visitor THEN (SELECT sender_id FROM previews WHERE visitor) ELSE c.last_interaction_sender_id END,
+    updated_at = statement_timestamp()
+FROM current_snapshots snapshot
+WHERE c.id = $1 AND (snapshot.staff OR snapshot.visitor)
+RETURNING c.last_message, c.last_message_at, c.last_message_sender,
+          c.last_interaction, c.last_interaction_at, c.last_interaction_sender, c.updated_at;
 
 -- name: get-message-source-ids
 SELECT 
@@ -988,6 +1095,7 @@ SELECT
     m.id,
     m.created_at,
     m.updated_at,
+    (m.meta->>'edited_at')::timestamptz AS edited_at,
     m.status,
     m.type,
     m.content,
@@ -1026,6 +1134,7 @@ INNER JOIN conversations c ON c.id = m.conversation_id
 JOIN users u ON m.sender_id = u.id
 LEFT JOIN media ON media.model_type = 'messages' AND media.model_id = m.id
 WHERE m.uuid = $1
+  AND m.meta->>'recalled_at' IS NULL
 GROUP BY
     m.id, m.created_at, m.updated_at, m.status, m.type, m.content, m.uuid, m.private, m.sender_type, c.uuid,
     u.id, u.first_name, u.last_name, u.email, u.avatar_url, u.availability_status, u.type, u.last_active_at
@@ -1037,6 +1146,8 @@ SELECT
    m.id,
    m.created_at,
    m.updated_at,
+   (m.meta->>'edited_at')::timestamptz AS edited_at,
+   (m.meta->>'recalled_at')::timestamptz AS recalled_at,
    m.status,
    m.type,
    m.content,
@@ -1079,6 +1190,7 @@ AND ($2::boolean IS NULL OR m.private = $2)
 AND ($3::text[] IS NULL OR m.type::text = ANY($3))
 AND (m.meta IS NULL OR NOT COALESCE((m.meta->>'continuity_email')::boolean, false))
 AND (NOT $4::boolean OR NOT COALESCE((m.meta->>'is_csat')::boolean, false))
+AND ($5::boolean OR m.meta->>'recalled_at' IS NULL)
 ORDER BY m.created_at DESC, m.id DESC %s
 
 -- name: insert-message
@@ -1247,6 +1359,7 @@ WHERE i.channel = 'livechat'
       AND cm.created_at > c.contact_last_seen_at
       AND cm.type = 'outgoing'
       AND cm.private = false
+      AND cm.meta->>'recalled_at' IS NULL
       AND (cm.meta IS NULL OR NOT COALESCE((cm.meta->>'continuity_email')::boolean, false))
       AND (cm.meta IS NULL OR NOT COALESCE((cm.meta->>'continuity_emailed')::boolean, false))
   )
@@ -1279,6 +1392,7 @@ WHERE m.conversation_id = $1
   AND m.created_at > $2
   AND m.type = 'outgoing'
   AND m.private = false
+  AND m.meta->>'recalled_at' IS NULL
   AND (m.meta IS NULL OR NOT COALESCE((m.meta->>'continuity_email')::boolean, false))
   AND (m.meta IS NULL OR NOT COALESCE((m.meta->>'continuity_emailed')::boolean, false))
 ORDER BY m.created_at ASC
