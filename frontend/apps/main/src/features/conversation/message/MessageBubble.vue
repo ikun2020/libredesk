@@ -299,6 +299,7 @@
         v-model:text-content="editText"
         class="min-h-24 max-h-[35dvh] rounded-md border p-3"
         :disabled="mutationPending"
+        :send-on-enter="!isTouchPrimary"
         :broadcast-typing="false"
         :show-ai="false"
         @send="saveEdit"
@@ -319,6 +320,7 @@
 const AUTHOR_LINK_CLASS = 'cursor-pointer text-muted-foreground text-sm font-medium hover:underline hover:text-foreground transition-colors duration-200'
 
 import { computed, ref, onMounted, nextTick, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useConversationStore } from '@main/stores/conversation'
 import { useUserStore } from '@main/stores/user'
 import { useI18n } from 'vue-i18n'
@@ -417,6 +419,7 @@ const props = defineProps({
 const convStore = useConversationStore()
 const { t } = useI18n()
 const userStore = useUserStore()
+const isTouchPrimary = useMediaQuery('(pointer: coarse)')
 
 const alertOpen = ref(false)
 const menuOpen = ref(false)

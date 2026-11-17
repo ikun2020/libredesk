@@ -8,12 +8,31 @@ vi.mock('@main/stores/conversation', () => ({
   useConversationStore: () => ({ current: { uuid: 'chat', inbox_channel: 'livechat' } })
 }))
 vi.mock('@main/stores/user', () => ({
-  useUserStore: () => ({ userID: 7, can: () => false })
+  useUserStore: () => ({ userID: 7, can: permission => permission === 'messages:write' })
 }))
-vi.mock('@main/components/editor/ConversationEditor.vue', () => ({ default: { render: () => null } }))
+vi.mock('@main/components/editor/ConversationEditor.vue', () => ({
+  default: {
+    props: { sendOnEnter: Boolean },
+    setup: props => () => h('div', { 'data-send-on-enter': String(props.sendOnEnter) })
+  }
+}))
 vi.mock('@main/composables/useWorkspaceDateTime', () => ({ useWorkspaceDateTime: () => ({}) }))
 vi.mock('@main/api', () => ({ default: {} }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }))
+
+function mountMessageBubble (message) {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({
+    render: () => h(TooltipProvider, null, () => h(MessageBubble, {
+      direction: 'outgoing', message, groupWithPrev: true, groupWithNext: true
+    }))
+  })
+  app.config.globalProperties.$t = key => key
+  app.component('RouterLink', { render: () => null })
+  app.mount(host)
+  return { app, host }
+}
 
 describe('message edits', () => {
   it('repaints the rich-text body when the same message is edited twice', async () => {
@@ -21,15 +40,7 @@ describe('message edits', () => {
       uuid: 'reply', id: 1, status: 'sent', sender_id: 7, sender_type: 'agent',
       content_type: 'html', content: '<p>Original message</p>', attachments: []
     })
-    const host = document.createElement('div')
-    document.body.append(host)
-    const app = createApp({
-      render: () => h(TooltipProvider, null, () => h(MessageBubble, {
-        direction: 'outgoing', message, groupWithPrev: true, groupWithNext: true
-      }))
-    })
-    app.component('RouterLink', { render: () => null })
-    app.mount(host)
+    const { app, host } = mountMessageBubble(message)
 
     try {
       const bubble = host.querySelector('.message-bubble')
@@ -51,6 +62,38 @@ describe('message edits', () => {
     } finally {
       app.unmount()
       host.remove()
+    }
+  })
+
+  it.each([false, true])('uses the editor Enter shortcut based on touch input (%s)', async (touch) => {
+    vi.stubGlobal('matchMedia', query => ({
+      matches: touch && query === '(pointer: coarse)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }))
+    const { app, host } = mountMessageBubble({
+      uuid: 'reply', id: 1, status: 'sent', sender_id: 7, sender_type: 'agent',
+      created_at: new Date().toISOString(), content_type: 'text', content: 'Reply',
+      text_content: 'Reply', attachments: []
+    })
+    try {
+      const actions = host.querySelector('[aria-label="globals.messages.moreActions"]')
+      actions.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      let editAction
+      await vi.waitFor(() => {
+        editAction = Array.from(document.querySelectorAll('[role="menuitem"]'))
+          .find(item => item.textContent.trim() === 'conversation.editMessage')
+        expect(editAction).toBeDefined()
+      })
+      editAction.click()
+      await vi.waitFor(() => {
+        const editor = document.querySelector('[data-send-on-enter]')
+        expect(editor?.dataset.sendOnEnter).toBe(String(!touch))
+      })
+    } finally {
+      app.unmount()
+      host.remove()
+      vi.unstubAllGlobals()
     }
   })
 })
