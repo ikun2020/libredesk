@@ -200,7 +200,7 @@ describe('Reply composer on touch screens', () => {
     }
   })
 
-  it('keeps Quick send beside the reply tabs on a narrow Duo PWA', () => {
+  it('keeps Quick send in the reply header and omits the macro shortcut on a narrow Duo PWA', () => {
     cy.viewport(374, 669)
     let state
     openConversation('coarse', {
@@ -213,6 +213,7 @@ describe('Reply composer on touch screens', () => {
       }
     })
 
+    cy.get('.reply-box-content button[aria-label="Apply macro"]').should('not.exist')
     const draft = 'Duo reply draft'
     let editableNode
     editor().click('center', { scrollBehavior: false }).type(draft, { scrollBehavior: false })

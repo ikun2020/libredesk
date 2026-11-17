@@ -53,7 +53,7 @@
           </Tooltip>
         </template>
       </FaceEmojiPicker>
-      <Tooltip>
+      <Tooltip v-if="showMacroPicker">
         <TooltipTrigger as-child>
           <Toggle
             :class="[ICON_BUTTON_CLASS, 'md:hidden']"
@@ -176,6 +176,10 @@ const props = defineProps({
     default: true
   },
   showGenerateReply: {
+    type: Boolean,
+    default: true
+  },
+  showMacroPicker: {
     type: Boolean,
     default: true
   },

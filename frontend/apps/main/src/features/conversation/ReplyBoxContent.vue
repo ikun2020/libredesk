@@ -228,6 +228,7 @@
       :handleSend="handleSend"
       :handleSendAndSetStatus="handleSendAndSetStatus"
       :isGenerating="isGenerating"
+      :show-macro-picker="!isDuoPwa"
       :showGenerateReply="messageType !== 'private_note'"
       @emojiSelect="insertEditorContent"
       @generateReply="$emit('generateReply')"
