@@ -130,7 +130,9 @@
                   'email-light-canvas': !isOutgoing && convStore.current?.inbox_channel === 'email'
                 }"
               >
+                <!-- Letter sanitizes its HTML during setup. Remount it for each saved edit. -->
                 <Letter
+                  :key="message.edited_at"
                   :html="sanitizedContent"
                   :allowedSchemas="allowedSchemas"
                   :rewriteExternalLinks="rewriteMessageLink"
@@ -285,11 +287,11 @@
   <Dialog :open="editOpen" @update:open="onEditOpenChange">
     <DialogContent
       :hide-close-button="mutationPending"
-      :aria-describedby="undefined"
       @open-auto-focus.prevent
     >
       <DialogHeader>
         <DialogTitle>{{ t('conversation.editMessage') }}</DialogTitle>
+        <DialogDescription class="sr-only">{{ t('globals.terms.typeMessage') }}</DialogDescription>
       </DialogHeader>
       <ConversationEditor
         v-if="editOpen"
@@ -348,7 +350,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@shared-ui/components/ui/alert-dialog'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@shared-ui/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@shared-ui/components/ui/dialog'
 import { Button } from '@shared-ui/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
 import { Spinner } from '@shared-ui/components/ui/spinner'

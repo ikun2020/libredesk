@@ -78,6 +78,7 @@
               />
               <Letter
                 v-else
+                :key="message.edited_at || message.uuid"
                 :html="message.content"
                 :allowedSchemas="['cid', 'https', 'http', 'mailto']"
                 :allowed-css-properties="extendedCssProperties"
