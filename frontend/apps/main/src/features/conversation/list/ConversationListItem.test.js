@@ -19,7 +19,7 @@ afterEach(() => {
   host?.remove()
 })
 
-it('retains the customer preview when agents reply or an assignment arrives', async () => {
+it('shows the latest public message across assignment, reply and note updates', async () => {
   const uuid = 'conversation-a'
   const router = createRouter({
     history: createMemoryHistory(),
@@ -32,9 +32,8 @@ it('retains the customer preview when agents reply or an assignment arrives', as
       store.conversations.data = [{
         uuid, status: 'open', contact: {},
         last_message: 'Assigned to the agent',
-        last_interaction: 'Thanks for the first message',
-        last_interaction_sender: 'agent',
-        customer_message_preview: { text: 'I need help', media_type: null }
+        last_interaction: 'I need help',
+        last_interaction_sender: 'contact'
       }]
       return () => h(TooltipProvider, null, () => h(ConversationListItem, {
         conversation: store.conversations.data[0], contactFullName: 'Visitor'
@@ -46,7 +45,7 @@ it('retains the customer preview when agents reply or an assignment arrives', as
   app.use(pinia).use(router).use(initI18n({
     legacy: false,
     locale: 'en',
-    messages: { en: { globals: { terms: { image: 'Image' }, messages: { markAsUnread: 'Mark as unread' } } } }
+    messages: { en: { globals: { messages: { markAsUnread: 'Mark as unread' } } } }
   }))
   await router.push(`/${uuid}`)
   host = document.createElement('div')
@@ -57,18 +56,24 @@ it('retains the customer preview when agents reply or an assignment arrives', as
   expect(host.textContent).not.toContain('Assigned to the agent')
   expect(host.querySelector('.lucide-reply')).toBeNull()
 
-  store.handleConvPush({ uuid, last_message: 'New assignment', last_interaction: 'Agent follow-up' })
+  store.handleConvPush({ uuid, last_message: 'New assignment', last_interaction: 'I need help', last_interaction_sender: 'contact' })
   await nextTick()
   expect(host.textContent).toContain('I need help')
-  expect(host.textContent).not.toContain('Agent follow-up')
+  expect(host.textContent).not.toContain('New assignment')
 
-  store.handleConvPush({ uuid, customer_message_preview: { text: ' ', media_type: 'image/png' } })
-  await nextTick()
-  expect(host.textContent).toContain('Image')
-
-  store.mergeConversationUpdate({ uuid, customer_message_preview: null })
+  store.handleConvPush({ uuid, last_message: 'Agent follow-up', last_interaction: 'Agent follow-up', last_interaction_sender: 'agent' })
   await nextTick()
   expect(host.textContent).toContain('Agent follow-up')
-  expect(host.textContent).not.toContain('New assignment')
+  expect(host.textContent).not.toContain('I need help')
   expect(host.querySelector('.lucide-reply')).not.toBeNull()
+
+  store.handleConvPush({ uuid, last_message: 'Private note', last_interaction: 'Agent follow-up', last_interaction_sender: 'agent' })
+  await nextTick()
+  expect(host.textContent).toContain('Agent follow-up')
+  expect(host.textContent).not.toContain('Private note')
+
+  store.handleConvPush({ uuid, last_message: 'Thanks!', last_interaction: 'Thanks!', last_interaction_sender: 'contact' })
+  await nextTick()
+  expect(host.textContent).toContain('Thanks!')
+  expect(host.querySelector('.lucide-reply')).toBeNull()
 })

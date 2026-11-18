@@ -64,23 +64,6 @@ SELECT
     conversations.last_interaction,
     conversations.last_interaction_at,
     conversations.last_interaction_sender,
-    COALESCE((
-        SELECT json_build_object(
-            'text', LEFT(m.text_content, 121),
-            'media_type', CASE WHEN COALESCE(m.text_content, '') !~ '[^[:space:]]' THEN (
-                SELECT media.content_type
-                FROM media
-                WHERE media.model_type = 'messages' AND media.model_id = m.id
-                ORDER BY media.id LIMIT 1
-            ) END
-        )
-        FROM conversation_messages m
-        WHERE m.conversation_id = conversations.id
-          AND m.type = 'incoming' AND m.sender_type = 'contact' AND NOT m.private
-          AND m.meta->>'recalled_at' IS NULL
-          AND COALESCE(m.meta->>'continuity_email', 'false') <> 'true'
-        ORDER BY m.created_at DESC, m.id DESC LIMIT 1
-    ), 'null'::json) AS customer_message_preview,
     conversations.next_sla_deadline_at,
     conversations.priority_id,
     conversations.assigned_user_id,
@@ -178,23 +161,6 @@ SELECT
     conversations.last_interaction,
     conversations.last_interaction_at,
     conversations.last_interaction_sender,
-    COALESCE((
-        SELECT json_build_object(
-            'text', LEFT(m.text_content, 121),
-            'media_type', CASE WHEN COALESCE(m.text_content, '') !~ '[^[:space:]]' THEN (
-                SELECT media.content_type
-                FROM media
-                WHERE media.model_type = 'messages' AND media.model_id = m.id
-                ORDER BY media.id LIMIT 1
-            ) END
-        )
-        FROM conversation_messages m
-        WHERE m.conversation_id = conversations.id
-          AND m.type = 'incoming' AND m.sender_type = 'contact' AND NOT m.private
-          AND m.meta->>'recalled_at' IS NULL
-          AND COALESCE(m.meta->>'continuity_email', 'false') <> 'true'
-        ORDER BY m.created_at DESC, m.id DESC LIMIT 1
-    ), 'null'::json) AS customer_message_preview,
     conversations.next_sla_deadline_at,
     conversations.priority_id,
     conversations.assigned_user_id,

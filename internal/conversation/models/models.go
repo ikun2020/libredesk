@@ -153,7 +153,6 @@ type ConversationListItem struct {
 	LastInteraction       null.String             `db:"last_interaction" json:"last_interaction"`
 	LastInteractionAt     null.Time               `db:"last_interaction_at" json:"last_interaction_at"`
 	LastInteractionSender null.String             `db:"last_interaction_sender" json:"last_interaction_sender"`
-	CustomerPreview       json.RawMessage         `db:"customer_message_preview" json:"customer_message_preview"`
 	NextSLADeadlineAt     null.Time               `db:"next_sla_deadline_at" json:"next_sla_deadline_at"`
 	PriorityID            null.Int                `db:"priority_id" json:"priority_id"`
 	AssignedUserID        null.Int                `db:"assigned_user_id" json:"assigned_user_id"`

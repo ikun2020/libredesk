@@ -276,15 +276,10 @@ onUnmounted(() => {
 })
 
 const messagePreview = computed(() => {
-  const { customer_message_preview: customerMessage, last_interaction: lastInteraction } = props.conversation
-  const message = (customerMessage ? customerMessage.text : lastInteraction)?.trim() || ''
-  if (!message && customerMessage?.media_type) {
-    return conversationStore.getMediaPreview([{ content_type: customerMessage.media_type }])
-  }
+  const message = props.conversation.last_interaction?.trim() || ''
   return message.length > 120 ? message.slice(0, 120) + '...' : message
 })
-const showReplyIcon = computed(() => !props.conversation.customer_message_preview &&
-  props.conversation.last_interaction_sender === 'agent' && !!messagePreview.value)
+const showReplyIcon = computed(() => props.conversation.last_interaction_sender === 'agent' && !!messagePreview.value)
 
 const conversationStatus = computed(() => conversationStore.statuses.find((status) => status.name === props.conversation.status))
 const isAwaitingResponse = computed(() => !!props.conversation.waiting_since && conversationStatus.value?.category === 'open')
