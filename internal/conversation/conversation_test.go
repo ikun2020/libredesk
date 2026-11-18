@@ -25,6 +25,81 @@ type unassignWebhook struct {
 	events []wmodels.WebhookEvent
 }
 
+func TestInboxPreviewUsesLatestCustomerMessage(t *testing.T) {
+	db := testutil.NewDB(t, "inbox_preview")
+	lo := logf.New(logf.Opts{})
+	m := &Manager{db: db, lo: &lo, i18n: testutil.NewI18n(t), settingsStore: stubSettingsStore{}}
+	if err := dbutil.ScanSQLFile("queries.sql", &m.q, db, efs); err != nil {
+		t.Fatal(err)
+	}
+	var contact, inbox int
+	if err := db.Get(&contact, `INSERT INTO users (type, first_name, last_name) VALUES ('contact', 'Customer', '') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Get(&inbox, `INSERT INTO inboxes (name, channel) VALUES ('Support', 'livechat') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	var conv models.Conversation
+	if err := db.Get(&conv, `INSERT INTO conversations (contact_id, inbox_id, status_id, last_message, last_interaction)
+		VALUES ($1, $2, (SELECT id FROM conversation_statuses LIMIT 1), 'Assigned by System', 'Agent reply')
+		RETURNING id, uuid`, contact, inbox); err != nil {
+		t.Fatal(err)
+	}
+
+	assertPreview := func(wantText, wantMedia string) {
+		t.Helper()
+		list, err := m.GetConversations(contact, 0, nil, []string{models.AllConversations}, "", "", "", 1, 10)
+		if err != nil || len(list) != 1 {
+			t.Fatalf("inbox list: got %d rows, err = %v", len(list), err)
+		}
+		item, err := m.GetConversationListItem(conv.UUID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range []models.ConversationListItem{list[0], item} {
+			var preview *struct {
+				Text      string `json:"text"`
+				MediaType string `json:"media_type"`
+			}
+			if len(row.CustomerPreview) > 0 {
+				if err := json.Unmarshal(row.CustomerPreview, &preview); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if wantText == "" && wantMedia == "" {
+				if preview != nil {
+					t.Fatalf("agent-initiated conversation has a customer preview: %+v", preview)
+				}
+			} else if preview == nil || preview.Text != wantText || preview.MediaType != wantMedia {
+				t.Fatalf("preview = %+v, want text %q and media %q", preview, wantText, wantMedia)
+			}
+			if row.LastMessage.String != "Assigned by System" || row.LastInteraction.String != "Agent reply" {
+				t.Fatal("existing activity and interaction fields were changed")
+			}
+		}
+	}
+	assertPreview("", "")
+
+	db.MustExec(`INSERT INTO conversation_messages
+		(conversation_id, sender_id, type, sender_type, status, text_content, created_at, private, meta)
+		VALUES ($1, $2, 'incoming', 'contact', 'received', 'Earlier question', NOW() - interval '2 minutes', false, '{}'),
+		       ($1, $2, 'incoming', 'contact', 'received', '你好', NOW() - interval '2 minutes', false, '{}'),
+		       ($1, $2, 'outgoing', 'agent', 'sent', 'Agent reply', NOW() - interval '1 minute', false, '{}'),
+		       ($1, $2, 'activity', 'agent', 'sent', 'Assigned by System', NOW(), true, '{}'),
+		       ($1, $2, 'incoming', 'contact', 'received', 'Hidden', NOW(), true, '{}'),
+		       ($1, $2, 'incoming', 'contact', 'received', 'Recalled', NOW(), false, '{"recalled_at": "set"}')`, conv.ID, contact)
+	assertPreview("你好", "")
+
+	var attachmentMessageID int
+	if err := db.Get(&attachmentMessageID, `INSERT INTO conversation_messages (conversation_id, sender_id, type, sender_type, status)
+		VALUES ($1, $2, 'incoming', 'contact', 'received') RETURNING id`, conv.ID, contact); err != nil {
+		t.Fatal(err)
+	}
+	db.MustExec(`INSERT INTO media (store, filename, content_type, model_id, model_type)
+		VALUES ('fs', 'photo.png', 'image/png', $1, 'messages')`, attachmentMessageID)
+	assertPreview("", "image/png")
+}
+
 func (w *unassignWebhook) TriggerEvent(event wmodels.WebhookEvent, _ any) {
 	w.events = append(w.events, event)
 }
