@@ -452,7 +452,7 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	getAndHead("/hc/{slug}", rateLimit(handleRedirectHelpCenterHome, "public"))
 	getAndHead("/hc/{slug}/{locale}", rateLimit(cachedHCPage(handleShowHelpCenterHome), "public"))
 	getAndHead("/hc/{slug}/{locale}/sitemap.xml", rateLimit(handleHelpCenterSitemap, "public"))
-	getAndHead("/hc/{slug}/{locale}/search", rateLimit(cachedHCNoIndexPage(handleHelpCenterSearch), "public"))
+	getAndHead("/hc/{slug}/{locale}/search", rateLimit(cachedHCPage(handleHelpCenterSearch), "public"))
 	getAndHead("/hc/{slug}/{locale}/collections/{collection_slug}", rateLimit(cachedHCPage(handleShowHelpCenterCollection), "public"))
 	getAndHead("/hc/{slug}/{locale}/articles/{article_slug}", rateLimit(countArticleView(cachedHCPage(handleShowHelpCenterArticle)), "public"))
 

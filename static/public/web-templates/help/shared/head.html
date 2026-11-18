@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ .Data.Title }}</title>
     {{ if .Data.MetaDescription }}<meta name="description" content="{{ .Data.MetaDescription }}" />{{ end }}
-    {{ if .Data.NoIndex }}<meta name="robots" content="noindex" />{{ end }}
+    <meta name="robots" content="noindex" />
     {{ if .Data.CanonicalPath }}<link rel="canonical" href="{{ .Data.HelpCenter.BaseURL }}{{ .Data.CanonicalPath }}" />{{ end }}
     {{ range .Data.Alternates }}<link rel="alternate" hreflang="{{ .Locale }}" href="{{ $.Data.HelpCenter.BaseURL }}{{ .Path }}" />
     {{ end }}{{ if .Data.XDefaultPath }}<link rel="alternate" hreflang="x-default" href="{{ .Data.HelpCenter.BaseURL }}{{ .Data.XDefaultPath }}" />{{ end }}

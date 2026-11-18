@@ -466,40 +466,56 @@ func TestHelpCenterPageCacheReportsHitOrMiss(t *testing.T) {
 	}
 }
 
-func TestHelpCenterPageCacheKeepsNoIndexOnHits(t *testing.T) {
+func TestHelpCenterPageCacheKeepsNoIndex(t *testing.T) {
 	app := &App{fc: newTestFastCache(t)}
-	body := func(r *fastglue.Request) error {
-		r.RequestCtx.Response.SetBodyString("raw markdown")
+	const pageBody = "help center content"
+	handler := cachedHCPage(func(r *fastglue.Request) error {
+		r.RequestCtx.Response.SetBodyString(pageBody)
 		return nil
-	}
+	})
 
 	cases := []struct {
-		name    string
-		handler fastglue.FastRequestHandler
-		uri     string
-		slug    string
+		name     string
+		uri      string
+		embedded bool
 	}{
-		{"search results", cachedHCNoIndexPage(body), "/hc/support/en/search?q=refund", ""},
-		{"markdown article", cachedHCPage(body), "/hc/support/en/articles/refunds.md", "refunds.md"},
-		{"html article", cachedHCPage(body), "/hc/support/en/articles/refunds", "refunds"},
+		{"home", "/hc/support/en", false},
+		{"collection", "/hc/support/en/collections/billing", false},
+		{"search results", "/hc/support/en/search?q=refund", false},
+		{"markdown article", "/hc/support/en/articles/refunds.md", false},
+		{"html article", "/hc/support/en/articles/refunds", false},
+		{"widget article", "/hc/support/en/articles/refunds?embed=1", true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			want := tc.slug != "refunds"
-			for _, pass := range []string{"miss", "hit"} {
-				req := request(tc.uri, "")
-				req.Context = app
-				if tc.slug != "" {
-					req.RequestCtx.SetUserValue("article_slug", tc.slug)
+			var etag string
+			for _, pass := range []string{"miss", "hit", "revalidate"} {
+				var ifNoneMatch string
+				wantStatus := fasthttp.StatusOK
+				if pass == "revalidate" {
+					ifNoneMatch = etag
+					wantStatus = fasthttp.StatusNotModified
 				}
-				if err := tc.handler(req); err != nil {
+				req := request(tc.uri, ifNoneMatch)
+				req.Context = app
+				if err := handler(req); err != nil {
 					t.Fatalf("%s: %v", pass, err)
 				}
-				got := string(req.RequestCtx.Response.Header.Peek("X-Robots-Tag")) == noIndexHeader
-				if got != want {
-					t.Errorf("%s: noindex = %v, want %v", pass, got, want)
+				resp := &req.RequestCtx.Response
+				if got := resp.StatusCode(); got != wantStatus {
+					t.Fatalf("%s: status = %d, want %d", pass, got, wantStatus)
 				}
+				if got := string(resp.Header.Peek("X-Robots-Tag")); got != noIndexHeader {
+					t.Errorf("%s: X-Robots-Tag = %q, want %q", pass, got, noIndexHeader)
+				}
+				if tc.embedded && len(resp.Header.Peek("X-Frame-Options")) > 0 {
+					t.Error("widget article should allow embedding")
+				}
+				if wantStatus == fasthttp.StatusOK && string(resp.Body()) != pageBody {
+					t.Errorf("%s: response body = %q, want %q", pass, resp.Body(), pageBody)
+				}
+				etag = string(resp.Header.Peek("ETag"))
 			}
 		})
 	}

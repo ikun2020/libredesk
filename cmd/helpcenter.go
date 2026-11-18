@@ -879,7 +879,6 @@ func handleShowHelpCenterArticle(r *fastglue.Request) error {
 			"Tree":             sidebarTree(app, helpCenter, locale),
 			"ActiveCollection": collection.Slug,
 			"ActiveArticle":    article.Slug,
-			"NoIndex":          isEmbedRequest(r),
 			"Content":          template.HTML(publicAssetPaths(app, stringutil.DeferOffscreenImages(article.Content))),
 		},
 	})
@@ -931,7 +930,6 @@ func handleHelpCenterSearch(r *fastglue.Request) error {
 		"L": lcl,
 		"Data": map[string]interface{}{
 			"Title":       fmt.Sprintf("%s - %s", lcl.T("globals.terms.search"), helpCenter.Name),
-			"NoIndex":     true,
 			"LocaleLinks": helpCenterLocaleLinks(helpCenter, helpCenterLocales(helpCenter), pathFor),
 			"HelpCenter":  data,
 			"Query":       query,
@@ -1244,16 +1242,8 @@ func countArticleView(h fastglue.FastRequestHandler) fastglue.FastRequestHandler
 	}
 }
 
+// cachedHCPage sets response headers even when the cache restores the body and content type.
 func cachedHCPage(h fastglue.FastRequestHandler) fastglue.FastRequestHandler {
-	return cacheHCPage(h, false)
-}
-
-func cachedHCNoIndexPage(h fastglue.FastRequestHandler) fastglue.FastRequestHandler {
-	return cacheHCPage(h, true)
-}
-
-// cacheHCPage owns every response header: the cache restores only body and content type.
-func cacheHCPage(h fastglue.FastRequestHandler, noIndex bool) fastglue.FastRequestHandler {
 	return func(r *fastglue.Request) error {
 		app := r.Context.(*App)
 		r.RequestCtx.SetUserValue(helpCenterCacheNamespaceKey, helpCenterCacheNamespace)
@@ -1278,9 +1268,7 @@ func cacheHCPage(h fastglue.FastRequestHandler, noIndex bool) fastglue.FastReque
 				r.RequestCtx.Response.Header.Set("X-Frame-Options", "SAMEORIGIN")
 			}
 			r.RequestCtx.Response.Header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			if noIndex || isEmbedRequest(r) || isMarkdownRequest(r) {
-				r.RequestCtx.Response.Header.Set("X-Robots-Tag", noIndexHeader)
-			}
+			r.RequestCtx.Response.Header.Set("X-Robots-Tag", noIndexHeader)
 		}
 		return err
 	}
@@ -1289,11 +1277,6 @@ func cacheHCPage(h fastglue.FastRequestHandler, noIndex bool) fastglue.FastReque
 // isEmbedRequest reports whether the page is framed by the chat widget.
 func isEmbedRequest(r *fastglue.Request) bool {
 	return r.RequestCtx.QueryArgs().GetBool("embed")
-}
-
-func isMarkdownRequest(r *fastglue.Request) bool {
-	slug, _ := r.RequestCtx.UserValue("article_slug").(string)
-	return strings.HasSuffix(slug, markdownSlugExtension)
 }
 
 func clearsHCCache(h fastglue.FastRequestHandler) fastglue.FastRequestHandler {
@@ -2064,7 +2047,6 @@ func renderHelpCenterStatusPage(r *fastglue.Request, hc *hcmodels.HelpCenter, st
 			"L": lcl,
 			"Data": map[string]interface{}{
 				"Title":       lcl.T(headingKey),
-				"NoIndex":     true,
 				"ErrorCode":   strconv.Itoa(status),
 				"ErrorTitle":  lcl.T(headingKey),
 				"ErrorText":   lcl.T(textKey),
