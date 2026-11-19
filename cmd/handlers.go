@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,9 @@ const (
 	maxPageSize = 500
 	maxIDsParam = 200
 )
+
+// Vite emits JS and CSS bundles with an eight-character content hash.
+var versionedFrontendAsset = regexp.MustCompile(`^/assets/[^/]+-[A-Za-z0-9_-]{8}\.(js|css)$`)
 
 // initHandlers initializes the HTTP routes and handlers for the application.
 func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
@@ -562,6 +566,9 @@ func serveFrontendStaticFiles(r *fastglue.Request) error {
 		contentType = http.DetectContentType(body)
 	}
 	r.RequestCtx.Response.Header.Set("Content-Type", contentType)
+	if versionedFrontendAsset.MatchString(filePath) {
+		r.RequestCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 	r.RequestCtx.Response.SetBodyRaw(body)
 	return nil
 }
