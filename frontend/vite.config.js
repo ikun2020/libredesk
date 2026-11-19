@@ -100,7 +100,6 @@ export default defineConfig(({ mode, command }) => {
             'misc': ['axios', 'date-fns', 'mitt', 'qs', 'vue-i18n'],
             // Main-app-only chunks - widget doesn't use these libraries.
             ...(!isWidget && {
-              'charts': ['@unovis/ts', '@unovis/vue'],
               'editor': [
                 '@tiptap/vue-3',
                 '@tiptap/starter-kit',

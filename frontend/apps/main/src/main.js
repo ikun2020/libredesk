@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { initI18n } from './i18n'
 import { useAppSettingsStore } from './stores/appSettings'
-import router from './router'
+import router, { updatePageTitle } from './router'
 import mitt from 'mitt'
 import api from './api'
 import '@shared-ui/assets/styles/main.scss'
@@ -16,9 +16,7 @@ const setFavicon = (url) => {
   link.href = url
 }
 
-async function initApp () {
-  const pinia = createPinia()
-  const settingsStore = useAppSettingsStore(pinia)
+async function loadAppSettings (settingsStore) {
   const settingsRequest = settingsStore.fetchSettings('general')
   const config = (await api.getConfig()).data.data
   settingsStore.setPublicConfig(config)
@@ -29,24 +27,28 @@ async function initApp () {
   if (config['app.favicon_url'])
     setFavicon(config['app.favicon_url'])
 
-  // Initialize i18n.
-  const i18nConfig = {
+  return initI18n({
     legacy: false,
     locale: lang,
     fallbackLocale: 'en-US',
     messages: {
       [lang]: langMessages.data
     }
-  }
+  })
+}
 
-  const i18n = initI18n(i18nConfig)
+async function initApp () {
+  const pinia = createPinia()
   const app = createApp(Root)
   app.use(pinia)
   app.config.globalProperties.emitter = mitt()
-  app.use(i18n)
+  const settingsRequest = loadAppSettings(useAppSettingsStore(pinia))
+
+  // Start loading the first route alongside the settings and language.
   app.use(router)
-  // Keep the startup screen visible while the first route's components load.
-  await router.isReady()
+  const [i18n] = await Promise.all([settingsRequest, router.isReady()])
+  app.use(i18n)
+  updatePageTitle(router.currentRoute.value)
   app.mount('#app')
   document.getElementById('app-startup')?.remove()
 }

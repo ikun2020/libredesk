@@ -713,21 +713,25 @@ router.afterEach((to, from, failure) => {
   if (!failure) sessionStorage.removeItem(reloadKey)
 })
 
+export function updatePageTitle (to) {
+  const i18n = getI18n()
+  if (!i18n) return
+  const appSettingsStore = useAppSettingsStore()
+  const siteName = appSettingsStore.settings?.['app.site_name'] || 'libredesk'
+  const typeKey = typeof to.meta?.typeKey === 'function' ? to.meta.typeKey(to) : ''
+  const titleKey = typeKey || to.meta?.titleKey
+  const pageTitle = titleKey
+    ? i18n.global.t(titleKey, to.meta?.titleCount || 1)
+    : ''
+  document.title = `${pageTitle} - ${siteName}`
+}
+
 router.beforeEach((to, from, next) => {
   // Cancel in-flight requests.
   if (to.fullPath !== from.fullPath) {
     abortRouteScope()
   }
-
-  const appSettingsStore = useAppSettingsStore()
-  const siteName = appSettingsStore.settings?.['app.site_name'] || 'libredesk'
-  const i18n = getI18n()
-  const typeKey = typeof to.meta?.typeKey === 'function' ? to.meta.typeKey(to) : ''
-  const titleKey = typeKey || to.meta?.titleKey
-  const pageTitle = titleKey && i18n
-    ? i18n.global.t(titleKey, to.meta?.titleCount || 1)
-    : ''
-  document.title = `${pageTitle} - ${siteName}`
+  updatePageTitle(to)
   next()
 })
 
