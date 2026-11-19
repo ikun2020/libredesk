@@ -27,6 +27,72 @@
     :root.dark {
       color-scheme: dark;
     }
+
+    #app-startup {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #fdfdfd;
+      color: #475569;
+      font: 14px/1.5 system-ui, sans-serif;
+      text-align: center;
+    }
+
+    .dark #app-startup {
+      background: #171717;
+      color: #d4d4d4;
+    }
+
+    .app-startup-loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .app-startup-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: app-startup-spin 800ms linear infinite;
+    }
+
+    .app-startup-error {
+      display: none;
+    }
+
+    #app-startup[data-startup-error] .app-startup-loading {
+      display: none;
+    }
+
+    #app-startup[data-startup-error] .app-startup-error {
+      display: block;
+    }
+
+    #app-startup-retry {
+      margin-top: 16px;
+      min-height: 44px;
+      padding: 8px 20px;
+      border: 1px solid currentColor;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    @keyframes app-startup-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .app-startup-spinner { animation: none; }
+    }
   </style>
   <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
   <link rel="apple-touch-icon" sizes="180x180" href="/images/pwa-icon-shifty-180.png" />
@@ -35,7 +101,27 @@
 </head>
 
 <body>
+  <div id="app-startup" role="status" aria-live="polite" aria-atomic="true">
+    <div class="app-startup-loading">
+      <span class="app-startup-spinner" aria-hidden="true"></span>
+      <span id="app-startup-loading-text">Loading…</span>
+    </div>
+    <div class="app-startup-error">
+      <div id="app-startup-error-text">Unable to load. Please try again.</div>
+      <button id="app-startup-retry" type="button">Reload</button>
+    </div>
+  </div>
   <div id="app"></div>
+  <script>
+    (() => {
+      if (/^zh(?:-|$)/i.test(navigator.language)) {
+        document.getElementById('app-startup-loading-text').textContent = '正在加载…'
+        document.getElementById('app-startup-error-text').textContent = '暂时无法加载，请重试。'
+        document.getElementById('app-startup-retry').textContent = '重新加载'
+      }
+      document.getElementById('app-startup-retry').addEventListener('click', () => location.reload())
+    })()
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 

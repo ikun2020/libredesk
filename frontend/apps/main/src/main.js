@@ -17,10 +17,13 @@ const setFavicon = (url) => {
 }
 
 async function initApp () {
+  const pinia = createPinia()
+  const settingsStore = useAppSettingsStore(pinia)
+  const settingsRequest = settingsStore.fetchSettings('general')
   const config = (await api.getConfig()).data.data
-  const emitter = mitt()
+  settingsStore.setPublicConfig(config)
   const lang = config['app.lang'] || 'en-US'
-  const langMessages = await api.getLanguage(lang)
+  const [langMessages] = await Promise.all([api.getLanguage(lang), settingsRequest])
 
   // Set favicon.
   if (config['app.favicon_url'])
@@ -38,29 +41,17 @@ async function initApp () {
 
   const i18n = initI18n(i18nConfig)
   const app = createApp(Root)
-  const pinia = createPinia()
   app.use(pinia)
-
-  // Fetch and store app settings in store (after pinia is initialized)
-  const settingsStore = useAppSettingsStore()
-
-  // Store the public config in the store
-  settingsStore.setPublicConfig(config)
-
-  try {
-    await settingsStore.fetchSettings('general')
-  } catch (error) {
-    // Pass
-  }
-
-  // Add emitter to global properties.
-  app.config.globalProperties.emitter = emitter
-
-  app.use(router)
+  app.config.globalProperties.emitter = mitt()
   app.use(i18n)
+  app.use(router)
+  // Keep the startup screen visible while the first route's components load.
+  await router.isReady()
   app.mount('#app')
+  document.getElementById('app-startup')?.remove()
 }
 
 initApp().catch((error) => {
+  document.getElementById('app-startup')?.setAttribute('data-startup-error', '')
   console.error('Error initializing app: ', error)
 })
