@@ -9,7 +9,6 @@ import (
 	"github.com/abhinavxd/libredesk/internal/envelope"
 	"github.com/abhinavxd/libredesk/internal/image"
 	"github.com/abhinavxd/libredesk/internal/user/models"
-	"github.com/valyala/fasthttp"
 	"github.com/zerodha/fastglue"
 	"github.com/zerodha/simplesessions/v3"
 )
@@ -214,9 +213,9 @@ func authPage(handler fastglue.FastRequestHandler) fastglue.FastRequestHandler {
 		if len(nextURI) == 0 {
 			nextURI = r.RequestCtx.RequestURI()
 		}
-		return r.RedirectURI("/", fasthttp.StatusFound, map[string]any{
+		return redirectAppURI(r, "/", map[string]any{
 			"next": string(nextURI),
-		}, "")
+		})
 	}
 }
 
@@ -241,7 +240,7 @@ func notAuthPage(handler fastglue.FastRequestHandler) fastglue.FastRequestHandle
 			if nextURI == "" {
 				nextURI = "/inboxes/assigned"
 			}
-			return r.RedirectURI(nextURI, fasthttp.StatusFound, nil, "")
+			return redirectAppURI(r, nextURI, nil)
 		}
 		return handler(r)
 	}

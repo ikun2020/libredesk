@@ -168,7 +168,7 @@ func handleOIDCCallback(r *fastglue.Request) error {
 		redirectURL = nextStr
 	}
 
-	return r.RedirectURI(redirectURL, fasthttp.StatusFound, nil, "")
+	return redirectAppURI(r, redirectURL, nil)
 }
 
 func redirectLoginError(r *fastglue.Request, code, next string) error {
@@ -176,5 +176,5 @@ func redirectLoginError(r *fastglue.Request, code, next string) error {
 	if next != "" {
 		args["next"] = next
 	}
-	return r.RedirectURI("/", fasthttp.StatusFound, args, "")
+	return redirectAppURI(r, "/", args)
 }
