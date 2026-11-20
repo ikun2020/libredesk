@@ -85,7 +85,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useEventListener, useStorage } from '@vueuse/core'
 import { RouterView } from 'vue-router'
 import { useUserStore } from './stores/user'
@@ -118,7 +118,6 @@ import ConnectionBanner from '@/components/banner/ConnectionBanner.vue'
 import { toast as sooner } from 'vue-sonner'
 import Sidebar from '@main/components/sidebar/Sidebar.vue'
 import Command from '@/features/command/CommandBox.vue'
-import CreateConversation from '@/features/conversation/CreateConversation.vue'
 import { hasNewConversationDraft } from '@/features/conversation/useNewConversationDraft.js'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -140,6 +139,8 @@ import { useIsMobile } from '@shared-ui/composables'
 import { useVisualViewportHeight } from '@main/composables/useVisualViewportHeight'
 import api from '@main/api'
 import { usePushNotifications } from '@/composables/usePushNotifications'
+
+const CreateConversation = defineAsyncComponent(() => import('@/features/conversation/CreateConversation.vue'))
 
 const route = useRoute()
 const emitter = useEmitter()
