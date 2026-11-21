@@ -12,6 +12,8 @@ encryption_key = "your-32-char-random-string-here!"
 # The directory structure should mirror the built-in static/ directory.
 # Only the files you provide will be replaced; the rest use built-in defaults.
 # static_dir = "/path/to/custom/static"
+# Optional local Simplified Chinese QQWry IPDB database for IPv4 and IPv6 locations in the agent sidebar.
+# ip_location_db = "/libredesk/geoip/qqwry.ipdb"
 
 # HTTP server.
 [app.server]

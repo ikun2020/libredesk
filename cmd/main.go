@@ -44,6 +44,7 @@ import (
 	"github.com/abhinavxd/libredesk/internal/helpcenter"
 	"github.com/abhinavxd/libredesk/internal/importer"
 	"github.com/abhinavxd/libredesk/internal/inbox"
+	"github.com/abhinavxd/libredesk/internal/iplocation"
 	"github.com/abhinavxd/libredesk/internal/media"
 	"github.com/abhinavxd/libredesk/internal/oidc"
 	"github.com/abhinavxd/libredesk/internal/ratelimit"
@@ -140,6 +141,7 @@ type App struct {
 	contextLink        *contextlink.Manager
 	rateLimit          *ratelimit.Limiter
 	clientIPHeader     string
+	ipLocation         *iplocation.Database
 	redis              *redis.Client
 	db                 *sqlx.DB
 	fc                 *fastcache.FastCache
@@ -369,6 +371,14 @@ func main() {
 		notificationPref: notificationPreference,
 		pushNotification: pushNotification,
 		wsHub:            wsHub,
+	}
+	if path := ko.String("app.ip_location_db"); path != "" {
+		locations, err := iplocation.Open(path)
+		if err != nil {
+			lo.Warn("could not load QQWry IP location database", "error", err)
+		} else {
+			app.ipLocation = locations
+		}
 	}
 	app.consts.Store(constants)
 	helpCenterCacheOpts.Logger = log.New(helpCenterCacheLogWriter{lo: app.lo}, "", 0)

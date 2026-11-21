@@ -104,7 +104,12 @@
       </div>
       <div v-if="conversation?.meta?.ip" class="flex gap-2 items-center">
         <Monitor size="16" class="text-muted-foreground flex-shrink-0" />
-        <span class="sidebar-value break-all">{{ conversation.meta.ip }}</span>
+        <span class="sidebar-value min-w-0 [overflow-wrap:anywhere]">
+          {{ conversation.meta.ip }}
+          <span v-if="conversation.ip_location" class="text-muted-foreground">
+            · {{ conversation.ip_location }}
+          </span>
+        </span>
       </div>
       <div v-if="conversation?.meta?.user_agent" class="flex gap-2 items-center">
         <Smartphone size="16" class="text-muted-foreground flex-shrink-0" />

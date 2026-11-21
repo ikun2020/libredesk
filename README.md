@@ -86,6 +86,20 @@ To use this image with the Compose file below, set the `app` service's `image` t
 for pulls without authentication, change the package's visibility to **Public**
 in its GitHub package settings. Otherwise, authenticate to `ghcr.io` before pulling.
 
+#### Offline IP location in the agent sidebar
+
+Place a standard [`qqwry.ipdb`](https://github.com/nmgliangwei/qqwry.ipdb#标准版)
+that you are authorized to use on the LibreDesk host. In Docker Compose, add
+`./qqwry.ipdb:/libredesk/geoip/qqwry.ipdb:ro` to the `app` service's `volumes`, then
+set `ip_location_db = "/libredesk/geoip/qqwry.ipdb"` under `[app]` in `config.toml`
+and recreate the app container. On native installs, set this option to the path
+of the local file and restart LibreDesk.
+
+LibreDesk queries the file locally when an agent opens a live chat conversation
+and displays matching IPv4 and IPv6 locations in Simplified Chinese. The sidebar
+shows only the IP if no region is available. To update the data, replace the host
+file and recreate the app container (or restart a native install).
+
 #### Upstream Docker Hub image
 
 The latest image is available on DockerHub at [`libredesk/libredesk:latest`](https://hub.docker.com/r/libredesk/libredesk/tags?page=1&ordering=last_updated&name=latest)

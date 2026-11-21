@@ -16,6 +16,7 @@ import (
 	cmodels "github.com/abhinavxd/libredesk/internal/conversation/models"
 	"github.com/abhinavxd/libredesk/internal/countries"
 	"github.com/abhinavxd/libredesk/internal/envelope"
+	"github.com/abhinavxd/libredesk/internal/inbox"
 	whatsappChannel "github.com/abhinavxd/libredesk/internal/inbox/channel/whatsapp"
 	"github.com/abhinavxd/libredesk/internal/stringutil"
 	umodels "github.com/abhinavxd/libredesk/internal/user/models"
@@ -386,7 +387,19 @@ func handleGetConversation(r *fastglue.Request) error {
 	}
 	// The current conversation stays in the list; the sidebar highlights it, like the conversation list does.
 	conv.PreviousConversations = prev
-	return r.SendEnvelope(conv)
+	response := struct {
+		*cmodels.Conversation
+		IPLocation string `json:"ip_location"`
+	}{Conversation: conv}
+	if app.ipLocation != nil && conv.InboxChannel == inbox.ChannelLiveChat {
+		var meta struct {
+			IP string `json:"ip"`
+		}
+		if json.Unmarshal(conv.Meta, &meta) == nil {
+			response.IPLocation = app.ipLocation.Lookup(meta.IP)
+		}
+	}
+	return r.SendEnvelope(response)
 }
 
 // handleDownloadConversationTranscript downloads the public transcript as plain text.
