@@ -18,6 +18,8 @@ func TestWidgetVisitorProbeOnlyRejectsCompleteTemplate(t *testing.T) {
 		{" \tSIG-BINDING PROBE, PLEASE IGNORE\r\n", true},
 		{"i123 sig-binding probe, please ignore", true},
 		{"I00017\t sig-binding  probe,\tplease ignore", true},
+		{"i47116 probe B - second self-created visitor, please ignore", true},
+		{"\tI123 PROBE A\t- FIRST self-created visitor,\tplease ignore ", true},
 		{"", false},
 		{"probe", false},
 		{"ignore", false},
@@ -27,6 +29,9 @@ func TestWidgetVisitorProbeOnlyRejectsCompleteTemplate(t *testing.T) {
 		{"i sig-binding probe, please ignore", false},
 		{"i123sig-binding probe, please ignore", false},
 		{"sig-binding probe,\nplease ignore", false},
+		{"i47116 probe B - second self-created visitor, please ignore 这条是我收到的消息", false},
+		{"i47116 probe B - second attempt, please ignore", false},
+		{"probe B - second self-created visitor, please ignore", false},
 	} {
 		t.Run(test.message, func(t *testing.T) {
 			req := widgetJSONRequest(app, "{}")
@@ -42,7 +47,7 @@ func TestWidgetVisitorProbeOnlyRejectsCompleteTemplate(t *testing.T) {
 }
 
 func TestVisitorProbeRejectedBeforeChatPersistenceOrUpload(t *testing.T) {
-	const payload = `{"message":"i19 sig-binding probe, please ignore","delivery_id":"campaign","browser_key":"browser"}`
+	const payload = `{"message":"i47116 probe B - second self-created visitor, please ignore","delivery_id":"campaign","browser_key":"browser"}`
 	for _, entry := range []string{"initial JSON", "initial multipart", "existing conversation"} {
 		t.Run(entry, func(t *testing.T) {
 			// Nil user, Redis, conversation and media managers ensure rejection
@@ -85,6 +90,7 @@ func TestChatInitDecodingPreservesIdentifiedMessagesAndOrdinaryGuestText(t *test
 		visitor bool
 	}{
 		{"sig-binding probe, please ignore", false},
+		{"i47116 probe B - second self-created visitor, please ignore", false},
 		{"请帮我检查这个 probe 返回的错误", true},
 	} {
 		payload, err := json.Marshal(map[string]string{"message": test.message})
