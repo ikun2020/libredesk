@@ -50,11 +50,7 @@ const (
 	phoneCountryCodeSuffix          = "_country_code"
 )
 
-var widgetVisitorProbeMessage = regexp.MustCompile(
-	`(?i)^(?:(?:i[0-9]+[ \t]+)?sig-binding[ \t]+probe|` +
-		`i[0-9]+[ \t]+probe[ \t]+[a-z][ \t]+-[ \t]+(?:first|second)[ \t]+self-created[ \t]+visitor),` +
-		`[ \t]+please[ \t]+ignore$`,
-)
+var widgetVisitorProbeKeyword = regexp.MustCompile(`(?i)probe`)
 
 // WidgetSession holds session data stored in Redis.
 type WidgetSession struct {
@@ -623,9 +619,9 @@ func handleChatSendMessage(r *fastglue.Request) error {
 	return sendChatMessageResponse(app, r, message.UUID)
 }
 
-// Reject known unsolicited probe templates only when they match the visitor's entire message.
+// Reject the probe keyword in anonymous visitor messages.
 func validateWidgetVisitorMessage(r *fastglue.Request, message string) error {
-	if getWidgetIsVisitor(r) && widgetVisitorProbeMessage.MatchString(strings.TrimSpace(message)) {
+	if getWidgetIsVisitor(r) && widgetVisitorProbeKeyword.MatchString(message) {
 		app := r.Context.(*App)
 		return envelope.NewError(envelope.InputError, app.i18n.T("globals.messages.errorSendingMessage"), nil)
 	}

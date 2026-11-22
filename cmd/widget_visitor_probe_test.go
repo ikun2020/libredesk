@@ -8,7 +8,7 @@ import (
 	"github.com/zerodha/fastglue"
 )
 
-func TestWidgetVisitorProbeOnlyRejectsCompleteTemplate(t *testing.T) {
+func TestWidgetVisitorProbeRejectsSubstring(t *testing.T) {
 	app := newWidgetUploadTestApp(t)
 	for _, test := range []struct {
 		message string
@@ -20,18 +20,24 @@ func TestWidgetVisitorProbeOnlyRejectsCompleteTemplate(t *testing.T) {
 		{"I00017\t sig-binding  probe,\tplease ignore", true},
 		{"i47116 probe B - second self-created visitor, please ignore", true},
 		{"\tI123 PROBE A\t- FIRST self-created visitor,\tplease ignore ", true},
+		{"secprobe-49623-B independent-session", true},
+		{"secprobe-00001-z independent-session", true},
+		{" \tSECPROBE-27-A\t  INDEPENDENT-SESSION\r\n", true},
 		{"", false},
-		{"probe", false},
+		{" \t\r\n", false},
+		{"probe", true},
+		{"pRoBe", true},
 		{"ignore", false},
 		{"sig-binding", false},
-		{"请问 sig-binding probe, please ignore 是什么意思？", false},
-		{"sig-binding probe, please ignore，这是我收到的内容", false},
-		{"i sig-binding probe, please ignore", false},
-		{"i123sig-binding probe, please ignore", false},
-		{"sig-binding probe,\nplease ignore", false},
-		{"i47116 probe B - second self-created visitor, please ignore 这条是我收到的消息", false},
-		{"i47116 probe B - second attempt, please ignore", false},
-		{"probe B - second self-created visitor, please ignore", false},
+		{"请帮我检查页面返回的错误", false},
+		{"请问 sig-binding probe, please ignore 是什么意思？", true},
+		{"sig-binding probe, please ignore，这是我收到的内容", true},
+		{"sig-binding probe,\nplease ignore", true},
+		{"i47116 probe B - second self-created visitor, please ignore 这条是我收到的消息", true},
+		{"secprobe", true},
+		{"secprobe-49623-B independent-session 这是我收到的消息", true},
+		{"请问 secprobe-49623-B independent-session 是什么意思？", true},
+		{`"secprobe-49623-B independent-session"`, true},
 	} {
 		t.Run(test.message, func(t *testing.T) {
 			req := widgetJSONRequest(app, "{}")
@@ -47,7 +53,7 @@ func TestWidgetVisitorProbeOnlyRejectsCompleteTemplate(t *testing.T) {
 }
 
 func TestVisitorProbeRejectedBeforeChatPersistenceOrUpload(t *testing.T) {
-	const payload = `{"message":"i47116 probe B - second self-created visitor, please ignore","delivery_id":"campaign","browser_key":"browser"}`
+	const payload = `{"message":"secprobe-49623-B independent-session","delivery_id":"campaign","browser_key":"browser"}`
 	for _, entry := range []string{"initial JSON", "initial multipart", "existing conversation"} {
 		t.Run(entry, func(t *testing.T) {
 			// Nil user, Redis, conversation and media managers ensure rejection
@@ -91,7 +97,9 @@ func TestChatInitDecodingPreservesIdentifiedMessagesAndOrdinaryGuestText(t *test
 	}{
 		{"sig-binding probe, please ignore", false},
 		{"i47116 probe B - second self-created visitor, please ignore", false},
-		{"请帮我检查这个 probe 返回的错误", true},
+		{"secprobe-49623-B independent-session", false},
+		{"请帮我检查页面返回的错误", true},
+		{"", true},
 	} {
 		payload, err := json.Marshal(map[string]string{"message": test.message})
 		if err != nil {
