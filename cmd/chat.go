@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -48,6 +49,8 @@ const (
 	fieldTypePhone                  = "phone"
 	phoneCountryCodeSuffix          = "_country_code"
 )
+
+var widgetVisitorProbeMessage = regexp.MustCompile(`(?i)^(?:i[0-9]+[ \t]+)?sig-binding[ \t]+probe,[ \t]+please[ \t]+ignore$`)
 
 // WidgetSession holds session data stored in Redis.
 type WidgetSession struct {
@@ -583,6 +586,9 @@ func handleChatSendMessage(r *fastglue.Request) error {
 	if len(req.Message) > maxChatMessageLength {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.Ts("globals.messages.maxLength", "max", strconv.Itoa(maxChatMessageLength)), nil, envelope.InputError)
 	}
+	if err := validateWidgetVisitorMessage(r, req.Message); err != nil {
+		return sendErrorEnvelope(r, err)
+	}
 
 	senderID, conversation, err := getContactConversation(r, conversationUUID)
 	if err != nil {
@@ -611,6 +617,15 @@ func handleChatSendMessage(r *fastglue.Request) error {
 	}
 
 	return sendChatMessageResponse(app, r, message.UUID)
+}
+
+// Reject the known unsolicited probe only when it is the visitor's entire message.
+func validateWidgetVisitorMessage(r *fastglue.Request, message string) error {
+	if getWidgetIsVisitor(r) && widgetVisitorProbeMessage.MatchString(strings.TrimSpace(message)) {
+		app := r.Context.(*App)
+		return envelope.NewError(envelope.InputError, app.i18n.T("globals.messages.errorSendingMessage"), nil)
+	}
+	return nil
 }
 
 // handleChatSubmitHandoffForm saves the form the AI agent asks the visitor to fill before it hands the chat to a human agent.

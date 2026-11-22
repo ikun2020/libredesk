@@ -28,7 +28,7 @@ func decodeChatInitRequest(r *fastglue.Request) (chatInitReq, error) {
 		if err := r.Decode(&req, "json"); err != nil {
 			return req, envelope.NewError(envelope.InputError, app.i18n.T("errors.parsingRequest"), nil)
 		}
-		return req, nil
+		return req, validateWidgetVisitorMessage(r, req.Message)
 	}
 
 	form, err := r.RequestCtx.MultipartForm()
@@ -38,6 +38,9 @@ func decodeChatInitRequest(r *fastglue.Request) (chatInitReq, error) {
 	payload := form.Value["payload"]
 	if len(payload) != 1 || json.Unmarshal([]byte(payload[0]), &req) != nil {
 		return req, envelope.NewError(envelope.InputError, app.i18n.T("errors.parsingRequest"), nil)
+	}
+	if err := validateWidgetVisitorMessage(r, req.Message); err != nil {
+		return req, err
 	}
 	config, err := getWidgetConfig(r)
 	if err != nil {
