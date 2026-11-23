@@ -570,7 +570,7 @@ SELECT inbox_id, contact_id FROM conversations WHERE uuid = $1;
 
 -- name: update-conversation-assigned-user
 -- $3 protects automatic AI assignments, $4 marks an explicit assignment back to AI.
--- Older transfers are recorded in ai_agent_events and have no flag in meta.
+-- Older transfers without a flag only count if they happened after the previous round ended.
 UPDATE conversations
 SET assigned_user_id = $2,
     meta = CASE WHEN $4::boolean THEN meta || '{"ai_handoff": false}'::jsonb ELSE meta END,
@@ -578,6 +578,8 @@ SET assigned_user_id = $2,
 WHERE uuid = $1 AND assigned_user_id IS DISTINCT FROM $2
   AND NOT ($3::boolean AND COALESCE((meta->'ai_handoff') = 'true'::jsonb, EXISTS (
       SELECT 1 FROM ai_agent_events WHERE conversation_id = conversations.id AND type = 'handoff'
+        AND created_at > GREATEST(conversations.last_resolved_at, conversations.resolved_at,
+                                  conversations.closed_at, '-infinity'::timestamptz)
   )));
 
 -- name: handoff-conversation-to-human
@@ -588,6 +590,7 @@ SET assigned_user_id = NULL,
     meta = meta || '{"ai_handoff": true}'::jsonb,
     updated_at = NOW()
 WHERE uuid = $1 AND assigned_user_id = $2
+  AND status_id NOT IN (SELECT id FROM conversation_statuses WHERE category = 'resolved')
 RETURNING COALESCE(assigned_team_id, 0);
 
 -- name: claim-unassigned-conversation
@@ -632,6 +635,9 @@ WITH new_status AS (
 )
 UPDATE conversations
 SET status_id        = (SELECT id FROM new_status),
+    meta             = CASE WHEN (SELECT category FROM new_status) = 'resolved'
+                              OR status_id IN (SELECT id FROM conversation_statuses WHERE category = 'resolved')
+                            THEN meta || '{"ai_handoff": false}'::jsonb ELSE meta END,
     resolved_at      = COALESCE(resolved_at, CASE WHEN (SELECT category FROM new_status) = 'resolved' THEN NOW() END),
     last_resolved_at = CASE WHEN (SELECT category FROM new_status) = 'resolved' THEN NOW() ELSE last_resolved_at END,
     closed_at        = COALESCE(closed_at,   CASE WHEN $2 = 'Closed'                                  THEN NOW() END),
@@ -846,6 +852,8 @@ WHERE uuid = $1;
 UPDATE conversations
 SET 
   status_id = (SELECT id FROM conversation_statuses WHERE name = 'Open'),
+  meta = CASE WHEN status_id IN (SELECT id FROM conversation_statuses WHERE category = 'resolved')
+              THEN meta || '{"ai_handoff": false}'::jsonb ELSE meta END,
   snoozed_until = NULL,
   updated_at = NOW(),
   assigned_user_id = CASE

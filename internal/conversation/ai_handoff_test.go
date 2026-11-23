@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"testing"
+	"time"
 
 	amodels "github.com/abhinavxd/libredesk/internal/automation/models"
 	"github.com/abhinavxd/libredesk/internal/conversation/models"
@@ -90,16 +91,33 @@ func TestAIHandoffAssignment(t *testing.T) {
 			t.Fatalf("assignment = (%d, %d, %q, %q), want (%d, %d, %q, %q)", assignee, team, handoff, source, wantAssignee, teamID, wantHandoff, "chat")
 		}
 	}
-
-	t.Run("automatic AI stays out after a transfer to the same team", func(t *testing.T) {
-		uuid := newConversation(t, nil)
-		assign(t, uuid, assistantUserID, true, false, 1)
-
+	handoff := func(t *testing.T, uuid string) {
+		t.Helper()
 		var assignedTeamID int
 		err := m.q.HandoffConversationToHuman.QueryRow(uuid, assistantUserID, teamID).Scan(&assignedTeamID)
 		if err != nil || assignedTeamID != teamID {
 			t.Fatalf("handoff team = %d, error %v, want %d", assignedTeamID, err, teamID)
 		}
+	}
+	changeStatus := func(t *testing.T, uuid, status string) {
+		t.Helper()
+		if _, err := m.q.UpdateConversationStatus.Exec(uuid, status, time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reopen := func(t *testing.T, uuid string) {
+		t.Helper()
+		var id int
+		if err := m.q.ReOpenConversation.QueryRow(uuid).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("automatic AI stays out after a transfer to the same team", func(t *testing.T) {
+		uuid := newConversation(t, nil)
+		assign(t, uuid, assistantUserID, true, false, 1)
+
+		handoff(t, uuid)
 
 		action := amodels.RuleAction{Type: amodels.ActionAssignUser, Value: []string{strconv.Itoa(assistantUserID)}}
 		if err := m.ApplyAction(action, models.Conversation{UUID: uuid}, umodels.User{}); err != nil {
@@ -110,6 +128,53 @@ func TestAIHandoffAssignment(t *testing.T) {
 		assign(t, uuid, assistantUserID, true, false, 0)
 		checkAssignment(t, uuid, humanID, "true")
 		assign(t, uuid, assistantUserID, false, true, 1)
+		checkAssignment(t, uuid, assistantUserID, "false")
+	})
+
+	for _, status := range []string{models.StatusResolved, models.StatusClosed} {
+		t.Run(status+" ends the handoff protection", func(t *testing.T) {
+			uuid := newConversation(t, assistantUserID)
+			handoff(t, uuid)
+			assign(t, uuid, humanID, false, false, 1)
+			changeStatus(t, uuid, status)
+			checkAssignment(t, uuid, humanID, "false")
+			reopen(t, uuid)
+			assign(t, uuid, assistantUserID, true, false, 1)
+			checkAssignment(t, uuid, assistantUserID, "false")
+		})
+
+		t.Run("reopening an existing "+status+" conversation releases its old handoff", func(t *testing.T) {
+			uuid := newConversation(t, assistantUserID)
+			handoff(t, uuid)
+			if _, err := db.Exec(`UPDATE conversations SET status_id =
+				(SELECT id FROM conversation_statuses WHERE name = $2) WHERE uuid = $1`, uuid, status); err != nil {
+				t.Fatal(err)
+			}
+			reopen(t, uuid)
+			assign(t, uuid, assistantUserID, true, false, 1)
+			checkAssignment(t, uuid, assistantUserID, "false")
+		})
+	}
+
+	t.Run("snoozing and reopening keeps the human handoff", func(t *testing.T) {
+		uuid := newConversation(t, assistantUserID)
+		handoff(t, uuid)
+		assign(t, uuid, humanID, false, false, 1)
+		changeStatus(t, uuid, models.StatusSnoozed)
+		reopen(t, uuid)
+		assign(t, uuid, assistantUserID, true, false, 0)
+		checkAssignment(t, uuid, humanID, "true")
+	})
+
+	t.Run("manual reopening releases a handoff saved before the status reset", func(t *testing.T) {
+		uuid := newConversation(t, assistantUserID)
+		handoff(t, uuid)
+		if _, err := db.Exec(`UPDATE conversations SET status_id =
+			(SELECT id FROM conversation_statuses WHERE name = 'Resolved') WHERE uuid = $1`, uuid); err != nil {
+			t.Fatal(err)
+		}
+		changeStatus(t, uuid, models.StatusOpen)
+		assign(t, uuid, assistantUserID, true, false, 1)
 		checkAssignment(t, uuid, assistantUserID, "false")
 	})
 
@@ -128,6 +193,19 @@ func TestAIHandoffAssignment(t *testing.T) {
 		checkAssignment(t, uuid, assistantUserID, "false")
 	})
 
+	t.Run("a historical event from a finished conversation does not block automatic AI", func(t *testing.T) {
+		uuid := newConversation(t, humanID)
+		if _, err := db.Exec(`INSERT INTO ai_agent_events (assistant_id, conversation_id, type, created_at)
+			SELECT $1, id, 'handoff', NOW() - INTERVAL '2 hours' FROM conversations WHERE uuid = $2`, assistantID, uuid); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE conversations SET last_resolved_at = NOW() - INTERVAL '1 hour' WHERE uuid = $1`, uuid); err != nil {
+			t.Fatal(err)
+		}
+		assign(t, uuid, assistantUserID, true, false, 1)
+		checkAssignment(t, uuid, assistantUserID, "")
+	})
+
 	t.Run("a late handoff cannot unassign a human who has taken over", func(t *testing.T) {
 		uuid := newConversation(t, assistantUserID)
 		assign(t, uuid, humanID, false, false, 1)
@@ -138,5 +216,17 @@ func TestAIHandoffAssignment(t *testing.T) {
 			t.Fatalf("stale handoff returned %v, want %v", err, sql.ErrNoRows)
 		}
 		checkAssignment(t, uuid, humanID, "")
+	})
+
+	t.Run("a late handoff cannot mark a resolved conversation", func(t *testing.T) {
+		uuid := newConversation(t, assistantUserID)
+		changeStatus(t, uuid, models.StatusResolved)
+
+		var assignedTeamID int
+		err := m.q.HandoffConversationToHuman.QueryRow(uuid, assistantUserID, teamID).Scan(&assignedTeamID)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("stale handoff returned %v, want %v", err, sql.ErrNoRows)
+		}
+		checkAssignment(t, uuid, assistantUserID, "false")
 	})
 }
