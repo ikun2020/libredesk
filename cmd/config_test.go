@@ -1,12 +1,65 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
 	oidcmodels "github.com/abhinavxd/libredesk/internal/oidc/models"
 	"github.com/knadh/koanf/v2"
+	"github.com/knadh/stuffbin"
+	"github.com/valyala/fasthttp"
+	"github.com/zerodha/fastglue"
 )
+
+func TestIncludeConfigLanguage(t *testing.T) {
+	fs, err := stuffbin.NewLocalFS("/",
+		"../i18n/en-US.json:i18n/en-US.json",
+		"../i18n/zh-CN.json:i18n/zh-CN.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newValidatorTestApp(t)
+	app.fs = fs
+	for _, tt := range []struct {
+		query string
+		want  bool
+	}{
+		{query: ""},
+		{query: "?include_language=false"},
+		{query: "?include_language=true", want: true},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			ctx := &fasthttp.RequestCtx{}
+			ctx.Request.SetRequestURI("/api/v1/config" + tt.query)
+			settings := map[string]any{"app.lang": "zh-CN"}
+			includeConfigLanguage(&fastglue.Request{RequestCtx: ctx, Context: app}, settings)
+
+			encoded, err := json.Marshal(settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded map[string]json.RawMessage
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			messages, ok := decoded["app.lang_messages"]
+			if ok != tt.want {
+				t.Fatalf("language messages present = %v, want %v", ok, tt.want)
+			}
+			if tt.want {
+				var lang map[string]string
+				if err := json.Unmarshal(messages, &lang); err != nil {
+					t.Fatal(err)
+				}
+				if got := lang["globals.terms.loading"]; got != "加载中" {
+					t.Errorf("loading label = %q, want the configured Chinese translation", got)
+				}
+			}
+		})
+	}
+}
 
 func TestIsLocalLoginEnabled(t *testing.T) {
 	tests := []struct {

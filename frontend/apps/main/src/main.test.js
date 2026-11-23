@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const { api, settings, router, app, updatePageTitle } = vi.hoisted(() => ({
+const { api, settings, router, app, updatePageTitle, initI18n } = vi.hoisted(() => ({
   api: { getConfig: vi.fn(), getLanguage: vi.fn() },
   settings: { fetchSettings: vi.fn(), setPublicConfig: vi.fn() },
   router: { isReady: vi.fn(), currentRoute: { value: { name: 'inbox' } } },
   app: { use: vi.fn(), mount: vi.fn(), config: { globalProperties: {} } },
-  updatePageTitle: vi.fn()
+  updatePageTitle: vi.fn(),
+  initI18n: vi.fn()
 }))
 
 vi.mock('./api', () => ({ default: api }))
@@ -15,7 +16,7 @@ vi.mock('./router', () => ({ default: router, updatePageTitle }))
 vi.mock('./Root.vue', () => ({ default: {} }))
 vi.mock('vue', () => ({ createApp: () => app }))
 vi.mock('pinia', () => ({ createPinia: () => ({}) }))
-vi.mock('./i18n', () => ({ initI18n: vi.fn() }))
+vi.mock('./i18n', () => ({ initI18n }))
 
 beforeEach(() => {
   vi.resetModules()
@@ -29,7 +30,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('starts loading the route before configuration and keeps startup visible until both complete', async () => {
+it('loads the first route alongside the public config and mounts before general settings finish', async () => {
   const publicConfig = Promise.withResolvers()
   const generalSettings = Promise.withResolvers()
   const initialRoute = Promise.withResolvers()
@@ -39,15 +40,18 @@ it('starts loading the route before configuration and keeps startup visible unti
 
   await import('./main.js')
   expect(settings.fetchSettings).toHaveBeenCalledWith('general')
+  expect(api.getConfig).toHaveBeenCalledWith({ include_language: true })
   expect(router.isReady).toHaveBeenCalled()
-  expect(api.getLanguage).not.toHaveBeenCalled()
-
-  publicConfig.resolve({ data: { data: { 'app.lang': 'zh-CN' } } })
-  await vi.waitFor(() => expect(api.getLanguage).toHaveBeenCalledWith('zh-CN'))
   expect(app.mount).not.toHaveBeenCalled()
   expect(document.getElementById('app-startup')).not.toBeNull()
 
-  generalSettings.resolve({})
+  const messages = { welcome: '你好' }
+  publicConfig.resolve({ data: { data: { 'app.lang': 'zh-CN', 'app.lang_messages': messages } } })
+  await vi.waitFor(() => expect(initI18n).toHaveBeenCalledWith(expect.objectContaining({
+    locale: 'zh-CN', messages: { 'zh-CN': messages }
+  })))
+  expect(settings.setPublicConfig).toHaveBeenCalledWith({ 'app.lang': 'zh-CN' })
+  expect(api.getLanguage).not.toHaveBeenCalled()
   expect(app.mount).not.toHaveBeenCalled()
   expect(document.getElementById('app-startup')).not.toBeNull()
 
@@ -55,6 +59,16 @@ it('starts loading the route before configuration and keeps startup visible unti
   await vi.waitFor(() => expect(app.mount).toHaveBeenCalledWith('#app'))
   expect(updatePageTitle).toHaveBeenCalledWith(router.currentRoute.value)
   expect(document.getElementById('app-startup')).toBeNull()
+  generalSettings.resolve({})
+})
+
+it('requests the language separately when the public config has no translations', async () => {
+  const messages = { welcome: '你好' }
+  api.getLanguage.mockResolvedValueOnce({ data: messages })
+  await import('./main.js')
+  await vi.waitFor(() => expect(app.mount).toHaveBeenCalledWith('#app'))
+  expect(api.getLanguage).toHaveBeenCalledExactlyOnceWith('zh-CN')
+  expect(initI18n).toHaveBeenCalledWith(expect.objectContaining({ messages: { 'zh-CN': messages } }))
 })
 
 it.each(['configuration', 'route'])('shows a retry state when the initial %s fails', async (step) => {

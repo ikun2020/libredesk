@@ -62,8 +62,24 @@ func handleGetConfig(r *fastglue.Request) error {
 	// Add SSO providers to the response
 	publicSettings["app.sso_providers"] = enabledProviders
 	publicSettings["auth.local_login_enabled"] = isLocalLoginEnabled(oidcProviders)
+	includeConfigLanguage(r, publicSettings)
 
 	return r.SendEnvelope(publicSettings)
+}
+
+// includeConfigLanguage lets the dashboard start with the configured locale in one request.
+func includeConfigLanguage(r *fastglue.Request, publicSettings map[string]any) {
+	if !r.RequestCtx.QueryArgs().GetBool("include_language") {
+		return
+	}
+	app := r.Context.(*App)
+	lang, _ := publicSettings["app.lang"].(string)
+	messages, err := i18nLangJSON(app, lang)
+	if err != nil {
+		app.lo.Warn("error including language in startup config", "language", lang, "error", err)
+		return
+	}
+	publicSettings["app.lang_messages"] = json.RawMessage(messages)
 }
 
 func localLoginDisabledInConfig() bool {

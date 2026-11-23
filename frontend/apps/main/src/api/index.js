@@ -134,7 +134,7 @@ const createOIDC = (data) =>
       'Content-Type': 'application/json'
     }
   })
-const getConfig = () => http.get('/api/v1/config')
+const getConfig = (params) => http.get('/api/v1/config', { params })
 const getAllOIDC = () => http.get('/api/v1/oidc')
 const getOIDC = (id) => http.get(`/api/v1/oidc/${id}`)
 const updateOIDC = (id, data) =>

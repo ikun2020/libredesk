@@ -717,7 +717,8 @@ export function updatePageTitle (to) {
   const i18n = getI18n()
   if (!i18n) return
   const appSettingsStore = useAppSettingsStore()
-  const siteName = appSettingsStore.settings?.['app.site_name'] || 'libredesk'
+  const siteName = appSettingsStore.settings?.['app.site_name'] ||
+    appSettingsStore.public_config?.['app.site_name'] || 'libredesk'
   const typeKey = typeof to.meta?.typeKey === 'function' ? to.meta.typeKey(to) : ''
   const titleKey = typeKey || to.meta?.titleKey
   const pageTitle = titleKey

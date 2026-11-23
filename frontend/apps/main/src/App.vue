@@ -62,7 +62,7 @@
             <!-- Main content -->
             <RouterView class="min-h-0 flex-1" />
           </div>
-          <ViewForm v-model:openDialog="openCreateViewForm" v-model:view="view" />
+          <ViewForm v-if="view" v-model:openDialog="openCreateViewForm" v-model:view="view" />
         </Sidebar>
       </div>
     </div>
@@ -112,7 +112,6 @@ import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog.vue'
 import ViewportDiagnostics from './components/ViewportDiagnostics.vue'
 import { initAudioContext } from '@shared-ui/composables/useNotificationSound'
 import PageHeader from './components/layout/PageHeader.vue'
-import ViewForm from '@/features/view/ViewForm.vue'
 import AdminBanner from '@/components/banner/AdminBanner.vue'
 import ConnectionBanner from '@/components/banner/ConnectionBanner.vue'
 import { toast as sooner } from 'vue-sonner'
@@ -141,6 +140,7 @@ import api from '@main/api'
 import { usePushNotifications } from '@/composables/usePushNotifications'
 
 const CreateConversation = defineAsyncComponent(() => import('@/features/conversation/CreateConversation.vue'))
+const ViewForm = defineAsyncComponent(() => import('@/features/view/ViewForm.vue'))
 
 const route = useRoute()
 const emitter = useEmitter()
@@ -179,7 +179,7 @@ const tagStore = useTagStore()
 const customAttributeStore = useCustomAttributeStore()
 const viewStore = useViewStore()
 const { open: showShortcuts } = useKeyboardShortcutsDialog()
-const view = ref({})
+const view = ref(null)
 const openCreateViewForm = ref(false)
 const hasSavedDraft = hasNewConversationDraft(window.localStorage)
 const openCreateConversationDialog = ref(hasSavedDraft)

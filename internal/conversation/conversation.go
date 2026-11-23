@@ -3,7 +3,6 @@ package conversation
 
 import (
 	"cmp"
-	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -786,16 +785,7 @@ func (c *Manager) GetConversations(viewingUserID, userID int, teamIDs []int, lis
 		return conversations, envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
 
-	tx, err := c.db.BeginTxx(context.Background(), &sql.TxOptions{
-		ReadOnly: true,
-	})
-	defer tx.Rollback()
-	if err != nil {
-		c.lo.Error("error preparing get conversations query", "error", err)
-		return conversations, envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
-	}
-
-	if err := tx.Select(&conversations, query, qArgs...); err != nil {
+	if err := c.db.Select(&conversations, query, qArgs...); err != nil {
 		c.lo.Error("error fetching conversations", "error", err)
 		return conversations, envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}

@@ -17,11 +17,11 @@ const setFavicon = (url) => {
 }
 
 async function loadAppSettings (settingsStore) {
-  const settingsRequest = settingsStore.fetchSettings('general')
-  const config = (await api.getConfig()).data.data
+  const response = await api.getConfig({ include_language: true })
+  const { 'app.lang_messages': bundledMessages, ...config } = response.data.data
   settingsStore.setPublicConfig(config)
   const lang = config['app.lang'] || 'en-US'
-  const [langMessages] = await Promise.all([api.getLanguage(lang), settingsRequest])
+  const langMessages = bundledMessages ?? (await api.getLanguage(lang)).data
 
   // Set favicon.
   if (config['app.favicon_url'])
@@ -32,7 +32,7 @@ async function loadAppSettings (settingsStore) {
     locale: lang,
     fallbackLocale: 'en-US',
     messages: {
-      [lang]: langMessages.data
+      [lang]: langMessages
     }
   })
 }
@@ -42,7 +42,9 @@ async function initApp () {
   const app = createApp(Root)
   app.use(pinia)
   app.config.globalProperties.emitter = mitt()
-  const settingsRequest = loadAppSettings(useAppSettingsStore(pinia))
+  const settingsStore = useAppSettingsStore(pinia)
+  void settingsStore.fetchSettings('general')
+  const settingsRequest = loadAppSettings(settingsStore)
 
   // Start loading the first route alongside the settings and language.
   app.use(router)

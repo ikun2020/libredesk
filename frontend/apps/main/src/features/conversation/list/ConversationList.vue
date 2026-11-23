@@ -193,7 +193,7 @@
 <script setup>
 const FILTER_TRIGGER_CLASS = 'min-w-0 justify-start gap-1.5 px-2 text-xs'
 
-import { computed, watch } from 'vue'
+import { computed, defineAsyncComponent, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Inbox, MessageCircleWarning, ChevronDown, Loader2, Plus, Search } from 'lucide-vue-next'
@@ -214,12 +214,12 @@ import { permissions } from '@main/constants/permissions'
 import { CONVERSATION_LIST_TYPE } from '@main/constants/conversation'
 import { useBulkActionPermissions } from '@/composables/useBulkActionPermissions'
 import EmptyList from '@/features/conversation/list/ConversationEmptyList.vue'
-import ConversationBulkActionToolbar from '@/features/conversation/list/ConversationBulkActionToolbar.vue'
 import ConversationListItem from '@/features/conversation/list/ConversationListItem.vue'
 import ConversationListItemSkeleton from '@/features/conversation/list/ConversationListItemSkeleton.vue'
 import InboxBulkStatusMenu from '@/features/conversation/list/InboxBulkStatusMenu.vue'
 
 const props = defineProps({ duo: Boolean })
+const ConversationBulkActionToolbar = defineAsyncComponent(() => import('./ConversationBulkActionToolbar.vue'))
 
 const conversationStore = useConversationStore()
 const teamStore = useTeamStore()
