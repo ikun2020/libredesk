@@ -347,6 +347,7 @@ type queries struct {
 	GetUnassignedConversations          *sqlx.Stmt `query:"get-unassigned-conversations"`
 	GetConversations                    string     `query:"get-conversations"`
 	GetContactChatConversations         *sqlx.Stmt `query:"get-contact-chat-conversations"`
+	HasWidgetContactIncomingHistory     *sqlx.Stmt `query:"has-widget-contact-incoming-history"`
 	GetChatConversation                 *sqlx.Stmt `query:"get-chat-conversation"`
 	GetContactPreviousConversations     *sqlx.Stmt `query:"get-contact-previous-conversations"`
 	GetContactConversationsForAI        *sqlx.Stmt `query:"get-contact-conversations-for-ai"`
@@ -563,6 +564,13 @@ func (c *Manager) GetContactChatConversations(contactID, inboxID int) ([]models.
 		c.SignAttachmentURLs(conversations[i].LastChatMessage.Attachments)
 	}
 	return conversations, nil
+}
+
+// HasWidgetContactIncomingHistory reports whether this contact previously sent a widget message to the inbox.
+func (c *Manager) HasWidgetContactIncomingHistory(contactID, inboxID int) (bool, error) {
+	var exists bool
+	err := c.q.HasWidgetContactIncomingHistory.Get(&exists, contactID, inboxID)
+	return exists, err
 }
 
 func (c *Manager) GetContactUnreadPreviewMessages(contactID, inboxID, limit int) ([]models.ChatMessage, error) {

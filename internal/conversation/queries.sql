@@ -507,6 +507,15 @@ WHERE c.contact_id = $1
 ORDER BY m.created_at DESC, m.id DESC
 LIMIT $3;
 
+-- name: has-widget-contact-incoming-history
+SELECT EXISTS (
+    SELECT 1
+    FROM conversations c
+    JOIN conversation_messages m ON m.conversation_id = c.id
+    WHERE c.contact_id = $1 AND c.inbox_id = $2
+      AND m.type = 'incoming' AND m.private = false
+);
+
 -- name: get-contact-chat-conversations
 SELECT
     COALESCE((SELECT json_agg(json_build_object('name', media.filename, 'content_type', media.content_type, 'uuid', media.uuid, 'size', media.size, 'content_id', media.content_id, 'disposition', media.disposition))

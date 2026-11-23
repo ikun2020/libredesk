@@ -238,8 +238,24 @@ func handleChatInit(r *fastglue.Request) error {
 	}
 
 	// Check if user is already authenticated (has session token).
+	pending, hasPending := getWidgetPendingIdentity(r)
+	var pendingMessageSaved bool
 	contactID, _ = getWidgetContactID(r)
-	if contactID > 0 {
+	if hasPending {
+		visitor, newSessionToken, err = prepareWidgetPendingContact(r, inbox, config, pending)
+		if err != nil {
+			return sendErrorEnvelope(r, err)
+		}
+		contactID = visitor.ID
+		formContactAttrs, formConvoAttrs := validateCustomAttributes(req.FormData, initialConfig, app)
+		pending.ContactCustomAttributes = mergeCustomAttributes(pending.ContactCustomAttributes, formContactAttrs)
+		conversationAttrs = formConvoAttrs
+		defer func() {
+			if !pendingMessageSaved {
+				deleteSessionToken(app, newSessionToken)
+			}
+		}()
+	} else if contactID > 0 {
 		// Returning user (visitor or contact) with session token.
 		// Custom attributes from JWT were already saved during /auth/exchange.
 		// Only process form-level attributes here.
@@ -313,6 +329,11 @@ func handleChatInit(r *fastglue.Request) error {
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.errorSendingMessage"), nil, envelope.GeneralError)
 	}
 
+	if hasPending {
+		pendingMessageSaved = true
+		saveWidgetPendingProfile(app, inbox, contactID, newSessionToken, pending)
+	}
+
 	// Process post-message hooks for the new conversation and initial message.
 	if err := app.conversation.ProcessIncomingMessageHooks(message, true); err != nil {
 		app.lo.Error("error processing incoming message hooks for initial message", "conversation_uuid", conversationUUID, "error", err)
@@ -322,6 +343,9 @@ func handleChatInit(r *fastglue.Request) error {
 	if err != nil {
 		app.lo.Error("error fetching created conversation", "conversation_uuid", conversationUUID, "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.somethingWentWrong"), nil, envelope.GeneralError)
+	}
+	if hasPending {
+		app.conversation.BroadcastConversationUpdate(conversationUUID, map[string]any{"contact": conversation.Contact})
 	}
 
 	// Build response with conversation and messages and add business hours info.
@@ -337,7 +361,7 @@ func handleChatInit(r *fastglue.Request) error {
 		"working_hours_utc_offset": resp.WorkingHoursUTCOffset,
 	}
 
-	// Add session token and user metadata when a new visitor is created.
+	// Add session token and user metadata for a first-time visitor or Support Sync contact.
 	if newSessionToken != "" {
 		response["session_token"] = newSessionToken
 		response["user"] = map[string]any{
@@ -346,6 +370,9 @@ func handleChatInit(r *fastglue.Request) error {
 			"first_name": visitor.FirstName,
 			"last_name":  visitor.LastName,
 		}
+	}
+	if hasPending {
+		response["identity_provider"] = supportSyncPurpose
 	}
 
 	return r.SendEnvelope(response)
@@ -391,7 +418,8 @@ func handleAuthExchange(r *fastglue.Request) error {
 	}
 
 	var req struct {
-		JWT string `json:"jwt"`
+		JWT          string `json:"jwt"`
+		VisitorToken string `json:"visitor_token"`
 	}
 	if err := r.Decode(&req, "json"); err != nil || req.JWT == "" {
 		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, app.i18n.Ts("globals.messages.required", "name", "jwt"), nil, envelope.InputError)
@@ -422,6 +450,26 @@ func handleAuthExchange(r *fastglue.Request) error {
 	// Country code is cosmetic - drop an invalid one instead of failing the whole exchange.
 	if len(claims.PhoneNumberCountryCode) > maxPhoneCountryCodeLength {
 		claims.PhoneNumberCountryCode = ""
+	}
+
+	if isSupportSyncID(claims.ExternalUserID) {
+		r.RequestCtx.Response.Header.Set("Cache-Control", "no-store")
+		hasHistory, err := knownWidgetSupportHistory(app, inbox, config, claims, req.VisitorToken)
+		if err != nil {
+			return sendErrorEnvelope(r, err)
+		}
+		if !hasHistory {
+			pending, err := sealWidgetPendingIdentity(inbox, claims, getSessionDuration(config), time.Now())
+			if err != nil {
+				app.lo.Error("error sealing pending Support Sync identity", "inbox_id", inbox.ID, "error", err)
+				return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, app.i18n.T("globals.messages.somethingWentWrong"), nil, envelope.GeneralError)
+			}
+			return r.SendEnvelope(map[string]any{
+				"identity_provider": supportSyncPurpose,
+				"pending_identity":  pending,
+				"user":              map[string]any{"is_visitor": false},
+			})
+		}
 	}
 
 	// Resolve or create the contact.

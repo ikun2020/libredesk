@@ -51,7 +51,7 @@ import { useWidgetStore } from '@widget/store/widget.js'
 import { useUserStore } from '@widget/store/user.js'
 import { useChatStore } from '@widget/store/chat.js'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
-import api, { saveSession } from '@widget/api/index.js'
+import api, { matchesChatInitSession, saveSession, saveSupportSyncSession } from '@widget/api/index.js'
 import WidgetError from '@widget/components/WidgetError.vue'
 import ChatHeader from '@widget/components/ChatHeader.vue'
 import ChatMessages from '@widget/components/ChatMessages.vue'
@@ -158,6 +158,8 @@ const handlePreChatFormSubmit = async ({ formData, message }) => {
 
   isInitializing.value = true
   errorMessage.value = ''
+  const sourceDrafts = chatStore.drafts
+  const sourceSessionToken = userStore.userSessionToken
 
   try {
     const payload = {
@@ -170,19 +172,23 @@ const handlePreChatFormSubmit = async ({ formData, message }) => {
     }
 
     const resp = await api.initChatConversation(payload)
+    const data = resp.data.data
+    if (chatStore.drafts !== sourceDrafts || !matchesChatInitSession(userStore, sourceSessionToken, data)) return
     const {
       conversation,
+      identity_provider,
       session_token,
       user,
       messages,
       business_hours_id,
       working_hours_utc_offset
-    } = resp.data.data
+    } = data
     conversation.business_hours_id = business_hours_id
     conversation.working_hours_utc_offset = working_hours_utc_offset
 
     if (!userStore.userSessionToken && session_token) {
-      saveSession(session_token, user, userStore, true)
+      if (identity_provider === 'support-sync') saveSupportSyncSession(session_token, user, userStore)
+      else saveSession(session_token, user, userStore, true)
     }
 
     chatStore.addConversationToList(conversation)
@@ -193,7 +199,7 @@ const handlePreChatFormSubmit = async ({ formData, message }) => {
     chatStore.preChatDraft = {}
     proactive.replied()
   } catch (error) {
-    errorMessage.value = handleHTTPError(error).message
+    if (chatStore.drafts === sourceDrafts) errorMessage.value = handleHTTPError(error).message
   } finally {
     isInitializing.value = false
   }

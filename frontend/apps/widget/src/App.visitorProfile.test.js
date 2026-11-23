@@ -8,6 +8,7 @@ const usesVisitorProfileIntegration = vi.hoisted(() => vi.fn(() => false))
 const setVisitorProfile = vi.hoisted(() => vi.fn())
 const clearVisitorProfile = vi.hoisted(() => vi.fn())
 const flushVisitorProfile = vi.hoisted(() => vi.fn())
+const pending = vi.hoisted(() => ({ token: '' }))
 const widget = reactive({ config: {}, isDark: false, branding: {}, currentView: 'chat' })
 const user = reactive({ userSessionToken: 'old-session', isVisitor: false })
 const chat = reactive({ drafts: {}, conversations: [], currentConversation: null })
@@ -16,6 +17,13 @@ const proactive = reactive({ reset: vi.fn(), setSessionKey: vi.fn(), setBrowserK
 
 vi.mock('@widget/api/index.js', () => ({ default: api, saveSession, usesVisitorProfileIntegration,
   setVisitorProfile, clearVisitorProfile, flushVisitorProfile,
+  hasPendingSupportSyncIdentity: () => !!pending.token,
+  setPendingSupportSyncIdentity: vi.fn(token => { pending.token = token }),
+  saveSupportSyncSession: vi.fn((token, meta, store) => {
+    pending.token = ''
+    store.setSessionToken(token)
+    store.setUserMeta(meta, 'support-sync')
+  }),
   setApiSessionToken: vi.fn(), initVisitorToken: vi.fn(), registerStores: vi.fn() }))
 vi.mock('@widget/store/widget.js', () => ({ useWidgetStore: () => widget }))
 vi.mock('@widget/store/chat.js', () => ({ useChatStore: () => chat }))
@@ -41,6 +49,7 @@ const message = async (type, extra = {}, origin = 'https://panel.example.test') 
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  pending.token = ''
   api.exchangeJWTForSession.mockReset().mockResolvedValue(response())
   usesVisitorProfileIntegration.mockReturnValue(false)
   Object.assign(chat, {
@@ -56,7 +65,7 @@ beforeEach(async () => {
   user.isVisitor = false
   user.setSessionToken = vi.fn(token => { user.userSessionToken = token })
   user.setUserMeta = vi.fn(meta => { user.userID = meta.user_id; user.isVisitor = meta.is_visitor })
-  user.clearSessionToken = vi.fn(() => { user.userSessionToken = '' })
+  user.clearSessionToken = vi.fn(() => { user.userSessionToken = ''; pending.token = '' })
   saveSession.mockImplementation(token => { user.userSessionToken = token })
   originalParent = Object.getOwnPropertyDescriptor(window, 'parent')
   parent = { postMessage: vi.fn() }
@@ -137,6 +146,43 @@ test('clearing or upgrading identity discards unsigned reference data', async ()
 const signedMode = () => window.history.replaceState({}, '', window.location.href + '&integration=support-sync')
 const signedResponse = (userID = 42) => ({
   data: { data: { identity_provider: 'support-sync', session_token: 'signed-session', user: { user_id: userID, is_visitor: false } } }
+})
+const pendingResponse = (token = 'pending-proof') => ({
+  data: { data: { identity_provider: 'support-sync', pending_identity: token, user: { is_visitor: false } } }
+})
+
+test('Support Sync keeps a new signed user pending and rotates the sealed identity without replacing drafts', async () => {
+  signedMode()
+  api.exchangeJWTForSession.mockResolvedValueOnce(pendingResponse())
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt', visitorToken: 'prior-visitor' })
+  expect(api.exchangeJWTForSession).toHaveBeenCalledExactlyOnceWith('signed.jwt', 'prior-visitor')
+  expect(pending.token).toBe('pending-proof')
+  expect(user.userSessionToken).toBe('')
+  expect(user.isVisitor).toBe(false)
+  expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'WIDGET_LOADED' }), '*')
+  expect(parent.postMessage).toHaveBeenCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: true }, 'https://panel.example.test')
+  const drafts = chat.drafts
+  api.exchangeJWTForSession.mockResolvedValueOnce(pendingResponse('new-pending-proof'))
+  await message('SUPPORT_SYNC_PROFILE', { jwt: 'refresh.jwt' })
+  expect(pending.token).toBe('new-pending-proof')
+  expect(chat.drafts).toBe(drafts)
+  expect(JSON.stringify(parent.postMessage.mock.calls)).not.toContain('pending-proof')
+})
+
+test('a pending profile refresh cannot overwrite a completed first contact', async () => {
+  signedMode()
+  api.exchangeJWTForSession.mockResolvedValueOnce(pendingResponse())
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt' })
+  const profile = Promise.withResolvers()
+  api.exchangeJWTForSession.mockReturnValueOnce(profile.promise)
+  await message('SUPPORT_SYNC_PROFILE', { jwt: 'refresh.jwt' })
+  user.setSessionToken('newly-created-session')
+  user.setUserMeta({ user_id: 42, is_visitor: false }, 'support-sync')
+  pending.token = ''
+  profile.resolve(pendingResponse('late-proof'))
+  await settle()
+  expect(user.userSessionToken).toBe('newly-created-session')
+  expect(pending.token).toBe('')
 })
 
 test('Support Sync rejects exchanges without the strict server marker', async () => {

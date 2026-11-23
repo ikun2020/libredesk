@@ -73,7 +73,7 @@ import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { sendWidgetTyping } from '@widget/websocket.js'
 import { useTypingIndicator } from '@shared-ui/composables/useTypingIndicator.js'
 import MessageInputActions from './MessageInputActions.vue'
-import api, { saveSession } from '@widget/api/index.js'
+import api, { matchesChatInitSession, saveSession, saveSupportSyncSession } from '@widget/api/index.js'
 
 import { useProactiveStore } from '@widget/store/proactive.js'
 const proactive = useProactiveStore()
@@ -135,20 +135,23 @@ const initChatConversation = async (messageText, files = []) => {
   )
   // Identity resets replace drafts even when an anonymous session has no token.
   // A completed upload must not restore the previous identity after a reset.
-  if (chatStore.drafts !== sourceDrafts || userStore.userSessionToken !== sourceSessionToken) return
+  const data = resp.data.data
+  if (chatStore.drafts !== sourceDrafts || !matchesChatInitSession(userStore, sourceSessionToken, data)) return
   const {
     conversation,
+    identity_provider,
     session_token,
     user,
     messages,
     business_hours_id,
     working_hours_utc_offset
-  } = resp.data.data
+  } = data
   conversation.business_hours_id = business_hours_id
   conversation.working_hours_utc_offset = working_hours_utc_offset
 
   if (!userStore.userSessionToken && session_token) {
-    saveSession(session_token, user, userStore, true)
+    if (identity_provider === 'support-sync') saveSupportSyncSession(session_token, user, userStore)
+    else saveSession(session_token, user, userStore, true)
   }
 
   // Add the new conversation to the list
@@ -201,6 +204,7 @@ const sendMessage = async () => {
 
   // Convert text to HTML.
   const messageText = newMessage.value.trim()
+  const sourceDrafts = chatStore.drafts
 
   // Clear input field immediately
   newMessage.value = ''
@@ -224,6 +228,7 @@ const sendMessage = async () => {
     }
     emit('error', '')
   } catch (error) {
+    if (chatStore.drafts !== sourceDrafts) return
     // Remove failed message if we have a temp ID.
     if (tempMessageID) {
       chatStore.removeMessage(chatStore.currentConversation.uuid, tempMessageID)

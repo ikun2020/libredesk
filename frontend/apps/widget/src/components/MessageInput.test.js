@@ -8,12 +8,15 @@ const api = vi.hoisted(() => ({
   uploadMedia: vi.fn()
 }))
 const saveSession = vi.hoisted(() => vi.fn())
+const saveSupportSyncSession = vi.hoisted(() => vi.fn())
 const widget = reactive({ config: {}, isOpen: true })
 const user = reactive({ userSessionToken: '', isVisitor: true, userID: null })
 const chat = reactive({ currentConversation: {}, drafts: {} })
 const proactive = reactive({ pending: null, replyPayload: vi.fn(), replied: vi.fn() })
 
-vi.mock('@widget/api/index.js', () => ({ default: api, saveSession }))
+vi.mock('@widget/api/index.js', async (importOriginal) => ({
+  ...(await importOriginal()), default: api, saveSession, saveSupportSyncSession
+}))
 vi.mock('@widget/store/widget.js', () => ({ useWidgetStore: () => widget }))
 vi.mock('@widget/store/chat.js', () => ({ useChatStore: () => chat }))
 vi.mock('@widget/store/user.js', () => ({ useUserStore: () => user }))
@@ -82,6 +85,7 @@ beforeEach(() => {
   widget.config = { features: { file_upload: true }, visitors: { quick_replies: ['Hello'] } }
   user.userSessionToken = ''
   user.isVisitor = true
+  user.userID = null
   chat.currentConversation = {}
   chat.drafts = {}
   Object.assign(chat, {
@@ -102,6 +106,34 @@ beforeEach(() => {
 afterEach(() => {
   app?.unmount()
   host?.remove()
+})
+
+it('keeps the signed session private when the first message is an attachment', async () => {
+  const result = response()
+  result.data.data.identity_provider = 'support-sync'
+  result.data.data.user.is_visitor = false
+  api.initChatConversation.mockResolvedValue(result)
+  await mount()
+  await select([file()])
+  expect(saveSupportSyncSession).toHaveBeenCalledExactlyOnceWith('new-session', { user_id: 42, is_visitor: false }, user)
+  expect(saveSession).not.toHaveBeenCalled()
+  expect(chat.currentConversation.uuid).toBe('created-conversation')
+})
+
+it('retains the first attachment when refresh has already opened the same verified account', async () => {
+  const request = deferred()
+  api.initChatConversation.mockReturnValue(request.promise)
+  await mount()
+  await select([file()])
+  user.userSessionToken = 'refreshed-session'
+  user.userID = 42
+  const result = response()
+  result.data.data.identity_provider = 'support-sync'
+  result.data.data.user.is_visitor = false
+  request.resolve(result)
+  await settle()
+  expect(saveSupportSyncSession).not.toHaveBeenCalled()
+  expect(chat.currentConversation.uuid).toBe('created-conversation')
 })
 
 describe('composer focus', () => {

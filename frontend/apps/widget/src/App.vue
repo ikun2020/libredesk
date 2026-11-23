@@ -19,7 +19,8 @@ import { useChatStore } from '@widget/store/chat.js'
 import { useUserStore } from './store/user.js'
 import { initWidgetWS, closeWidgetWebSocket, sendPageVisit, skipInitialWsSync } from './websocket.js'
 import api, { setApiSessionToken, initVisitorToken, saveSession, registerStores,
-  usesVisitorProfileIntegration, setVisitorProfile, clearVisitorProfile, flushVisitorProfile } from '@widget/api/index.js'
+  usesVisitorProfileIntegration, setVisitorProfile, clearVisitorProfile, flushVisitorProfile,
+  hasPendingSupportSyncIdentity, setPendingSupportSyncIdentity, saveSupportSyncSession } from '@widget/api/index.js'
 import { useUnreadCount } from './composables/useUnreadCount.js'
 import { initAudioContext } from '@shared-ui/composables/useNotificationSound.js'
 import { hexToHSL, getContrastingHSL } from '@shared-ui/utils/color.js'
@@ -141,28 +142,43 @@ let identityRequest = 0
 
 const exchangeSupportSyncIdentity = async (message, parentOrigin) => {
   const refresh = message.type === 'SUPPORT_SYNC_PROFILE'
-  const previousUser = userStore.userID
-  if (refresh && (!previousUser || !userStore.userSessionToken || userStore.isVisitor)) return
+  const wasPending = hasPendingSupportSyncIdentity()
+  if (refresh && !wasPending && (!userStore.userID || !userStore.userSessionToken || userStore.isVisitor)) return
   const request = ++identityRequest
   try {
-    const response = await api.exchangeJWTForSession(message.jwt)
+    const response = await api.exchangeJWTForSession(message.jwt, refresh ? undefined : message.visitorToken)
     if (request !== identityRequest) return
-    const { identity_provider, session_token, user } = response.data.data
-    if (identity_provider !== 'support-sync' || !session_token || !user?.user_id || user.is_visitor !== false ||
-      (refresh && user.user_id !== previousUser)) throw new Error('Invalid Support Sync identity')
+    const { identity_provider, session_token, pending_identity, user } = response.data.data
+    const pending = typeof pending_identity === 'string' && pending_identity !== ''
+    const currentUser = userStore.userID
+    if (identity_provider !== 'support-sync' || user?.is_visitor !== false ||
+      (pending ? session_token || (refresh && !wasPending) :
+        !session_token || !user.user_id || (refresh && currentUser && user.user_id !== currentUser))) {
+      throw new Error('Invalid Support Sync identity')
+    }
 
     if (!refresh) {
       clearVisitorProfile()
-      initVisitorToken(message.visitorToken || '')
+      initVisitorToken(response.headers?.['x-libredesk-clear-visitor'] ? '' : message.visitorToken || '')
       chatStore.conversations = null
-      skipInitialWsSync()
     }
-    // Keep the verified session inside the support frame. The host signs in
-    // again on reload, and refreshes the profile without discarding drafts.
-    userStore.setSessionToken(session_token)
-    setApiSessionToken(session_token)
-    userStore.setUserMeta(user, identity_provider)
-    if (!refresh) {
+    const restoreHistory = !refresh || (!pending && !userStore.userSessionToken)
+    if (pending) {
+      // A refresh may complete just after the first send installs a verified
+      // session. In that case the pending response is already out of date.
+      if (!refresh || !userStore.userSessionToken) {
+        if (!refresh) {
+          userStore.clearSessionToken()
+          chatStore.setCurrentConversation(null)
+        }
+        setPendingSupportSyncIdentity(pending_identity)
+        userStore.setUserMeta(user, identity_provider)
+      }
+    } else {
+      if (restoreHistory) skipInitialWsSync()
+      saveSupportSyncSession(session_token, user, userStore)
+    }
+    if (restoreHistory) {
       if (!await fetchInitialConversations()) throw new Error('Support Sync history unavailable')
       if (request !== identityRequest) return
       signalWidgetLoaded()

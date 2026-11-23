@@ -41,6 +41,9 @@ func handleWidgetCampaign(r *fastglue.Request) error {
 	if err != nil {
 		return sendErrorEnvelope(r, err)
 	}
+	if pending, ok := getWidgetPendingIdentity(r); ok {
+		contact.CustomAttributes = marshalCustomAttributes(pending.ContactCustomAttributes, app)
+	}
 	ctx.ContactID = contact.ID
 	inbox, err := getWidgetInbox(r)
 	if err != nil {

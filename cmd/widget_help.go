@@ -12,11 +12,20 @@ import (
 )
 
 func optionalWidgetAuth(next func(*fastglue.Request) error) func(*fastglue.Request) error {
+	withoutSession := validateWidgetInbox(func(r *fastglue.Request) error {
+		if len(r.RequestCtx.Request.Header.Peek(hdrWidgetPendingIdentity)) > 0 {
+			if err := acceptWidgetPendingIdentity(r); err != nil {
+				return sendErrorEnvelope(r, err)
+			}
+		}
+		return next(r)
+	})
+	withSession := widgetAuth(next)
 	return func(r *fastglue.Request) error {
 		if len(r.RequestCtx.Request.Header.Peek("Authorization")) == 0 {
-			return validateWidgetInbox(next)(r)
+			return withoutSession(r)
 		}
-		return widgetAuth(next)(r)
+		return withSession(r)
 	}
 }
 

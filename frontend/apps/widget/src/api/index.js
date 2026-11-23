@@ -3,6 +3,7 @@ import { createVisitorProfileSync } from '../utils/visitorProfile.js'
 
 let _sessionToken = ''
 let _visitorToken = ''
+let _pendingSupportSyncIdentity = ''
 
 export function usesVisitorProfileIntegration() {
   return new URLSearchParams(window.location.search).get('integration') === 'lite'
@@ -33,6 +34,15 @@ function getInboxIDFromQuery() {
 
 export function setApiSessionToken(token) {
   _sessionToken = token || ''
+  _pendingSupportSyncIdentity = ''
+}
+
+export function setPendingSupportSyncIdentity(token) {
+  _pendingSupportSyncIdentity = token
+}
+
+export function hasPendingSupportSyncIdentity() {
+  return !!_pendingSupportSyncIdentity
 }
 
 export function setVisitorToken(token) {
@@ -82,6 +92,22 @@ export function saveSession(sessionToken, user, userStore, isNewVisitor = false)
   void flushVisitorProfile()
 }
 
+// Verified Support Sync sessions stay in the iframe, including when the first
+// message turns a pending identity into a contact.
+export function saveSupportSyncSession(sessionToken, user, userStore) {
+  userStore.setSessionToken(sessionToken)
+  setApiSessionToken(sessionToken)
+  userStore.setUserMeta(user, 'support-sync')
+}
+
+// A profile refresh can restore this same signed account while its first
+// message is being sent. Preserve the response if it belongs to that account.
+export function matchesChatInitSession(userStore, sourceSessionToken, response) {
+  return userStore.userSessionToken === sourceSessionToken ||
+    (!sourceSessionToken && response.identity_provider === 'support-sync' &&
+      response.user?.user_id > 0 && response.user.user_id === userStore.userID)
+}
+
 // Returns visitor token if current user is a verified contact (for merge).
 function getVisitorTokenForMerge() {
   if (usesVisitorProfileIntegration()) return null
@@ -97,6 +123,15 @@ const http = axios.create({
   responseType: 'json'
 })
 
+const pendingIdentityHeader = 'X-Libredesk-Pending-Identity'
+const chatAPI = '/api/v1/widget/chat/'
+const permitsPendingIdentity = path =>
+  path === chatAPI + 'conversations/init' ||
+  path === chatAPI + 'help' ||
+  path.startsWith(chatAPI + 'help/') ||
+  path === chatAPI + 'campaigns/next' ||
+  path === chatAPI + 'campaigns/event'
+
 // Set content type and authentication headers
 http.interceptors.request.use((request) => {
   if ((request.method === 'post' || request.method === 'put') && !request.headers['Content-Type']) {
@@ -109,6 +144,8 @@ http.interceptors.request.use((request) => {
     const sessionToken = request.widgetSessionToken ?? _sessionToken
     if (sessionToken) {
       request.headers['Authorization'] = `Bearer ${sessionToken}`
+    } else if (_pendingSupportSyncIdentity && permitsPendingIdentity(request.url)) {
+      request.headers[pendingIdentityHeader] = _pendingSupportSyncIdentity
     }
 
     if (inboxId) {
@@ -135,7 +172,9 @@ http.interceptors.response.use(
     if (error.response?.status === 401) {
       // Ignore a stale 401 when a newer session is already active.
       const reqAuth = error.config?.headers?.Authorization
-      if (reqAuth && reqAuth === `Bearer ${_sessionToken}`) {
+      const pending = error.config?.headers?.[pendingIdentityHeader]
+      if ((reqAuth && reqAuth === `Bearer ${_sessionToken}`) ||
+          (pending && pending === _pendingSupportSyncIdentity)) {
         handleSessionExpired()
       }
     }
@@ -145,6 +184,7 @@ http.interceptors.response.use(
       if (error.config.headers) {
         delete error.config.headers.Authorization
         delete error.config.headers['X-Libredesk-Visitor-Token']
+        delete error.config.headers[pendingIdentityHeader]
       }
       if (error.config.url?.includes('/chat/auth/exchange')) error.config.data = '[redacted]'
       if (error.config.url?.includes('/chat/visitor/profile') || usesVisitorProfileIntegration()) error.config.data = '[redacted]'
@@ -160,7 +200,8 @@ const getWidgetSettings = (inboxID) =>
   })
 const getLanguage = (lang) => http.get(`/api/v1/lang/${lang}`)
 const getAvailableLanguages = () => http.get('/api/v1/lang')
-const exchangeJWTForSession = (jwt) => http.post('/api/v1/widget/chat/auth/exchange', { jwt })
+const exchangeJWTForSession = (jwt, visitorToken) => http.post('/api/v1/widget/chat/auth/exchange',
+  visitorToken ? { jwt, visitor_token: visitorToken } : { jwt })
 const getAuthMe = () => http.get('/api/v1/widget/chat/auth/me')
 const initChatConversation = (data, files = []) => {
   if (usesVisitorProfileIntegration() && !data.delivery_id && (!_sessionToken || _stores?.userStore.isVisitor === true)) {

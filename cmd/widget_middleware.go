@@ -90,6 +90,16 @@ func widgetAuth(next func(*fastglue.Request) error) func(*fastglue.Request) erro
 
 		authHeader := string(r.RequestCtx.Request.Header.Peek("Authorization"))
 
+		if len(r.RequestCtx.Request.Header.Peek(hdrWidgetPendingIdentity)) > 0 {
+			if authHeader != "" || !strings.HasSuffix(string(r.RequestCtx.Path()), "/conversations/init") {
+				return sendErrorEnvelope(r, pendingWidgetIdentityDenied(app))
+			}
+			if err := acceptWidgetPendingIdentity(r); err != nil {
+				return sendErrorEnvelope(r, err)
+			}
+			return next(r)
+		}
+
 		// For init endpoint, allow requests without token (visitor creation).
 		if authHeader == "" && strings.HasSuffix(string(r.RequestCtx.Path()), "/conversations/init") {
 			return next(r)

@@ -21,6 +21,15 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 	if err != nil {
 		return sendErrorEnvelope(r, err)
 	}
+	pending, hasPending := getWidgetPendingIdentity(r)
+	if hasPending {
+		// A previously accepted first reply may have already bound this delivery.
+		// Resolve the signed account before reading any associated conversation.
+		contact, err = findWidgetSupportContact(app, pending)
+		if err != nil {
+			return sendErrorEnvelope(r, err)
+		}
+	}
 	delivery, err := app.proactive.Get(req.DeliveryID, inbox.ID, req.BrowserKey, contact.ID)
 	if err != nil {
 		return sendErrorEnvelope(r, err)
@@ -32,6 +41,14 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 		return sendErrorEnvelope(r, envelope.NewError(envelope.ConflictError, app.i18n.T("widget.invitationExpired"), nil))
 	}
 	var sessionToken string
+	var keepPendingSession bool
+	if hasPending {
+		defer func() {
+			if sessionToken != "" && !keepPendingSession {
+				deleteSessionToken(app, sessionToken)
+			}
+		}()
+	}
 	var attrs map[string]any
 	visitor := getWidgetIsVisitor(r)
 	if delivery.ConversationUUID != "" {
@@ -40,7 +57,7 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 			return sendErrorEnvelope(r, err)
 		}
 		if contact.ID != conversation.ContactID {
-			if contact.ID > 0 {
+			if contact.ID > 0 || hasPending {
 				return sendErrorEnvelope(r, envelope.NewError(envelope.PermissionError, app.i18n.T("widget.conversationNotPermitted"), nil))
 			}
 			contact, err = app.user.GetContactOrVisitor(conversation.ContactID, "")
@@ -59,12 +76,30 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 		if err := canReply(r, conversation); err != nil {
 			return sendErrorEnvelope(r, err)
 		}
+		if hasPending {
+			sessionToken, err = generateSessionToken(app, contact.ID, inbox.ID, false, pending.ExternalUserID, getSessionDuration(config))
+			if err != nil {
+				return sendErrorEnvelope(r, err)
+			}
+		}
 		message := cmodels.Message{ConversationUUID: conversation.UUID, ConversationID: conversation.ID, SenderID: contact.ID, Type: cmodels.MessageIncoming, SenderType: cmodels.SenderTypeContact, Status: cmodels.MessageStatusReceived, Content: req.Message, ContentType: cmodels.ContentTypeText, Attachments: req.Attachments}
 		if _, err := app.conversation.ProcessIncomingLiveChatMessage(message); err != nil {
 			return sendErrorEnvelope(r, envelope.NewError(envelope.GeneralError, app.i18n.T("globals.messages.errorSendingMessage"), nil))
 		}
+		if hasPending {
+			keepPendingSession = true
+			saveWidgetPendingProfile(app, inbox, contact.ID, sessionToken, pending)
+		}
 	} else {
-		if contact.ID == 0 {
+		if hasPending {
+			contact, sessionToken, err = prepareWidgetPendingContact(r, inbox, config, pending)
+			if err != nil {
+				return sendErrorEnvelope(r, err)
+			}
+			formContactAttrs, formConvoAttrs := validateCustomAttributes(req.FormData, config, app)
+			pending.ContactCustomAttributes = mergeCustomAttributes(pending.ContactCustomAttributes, formContactAttrs)
+			attrs = formConvoAttrs
+		} else if contact.ID == 0 {
 			contact, sessionToken, attrs, err = createVisitorContact(app, req.FormData, config, inbox)
 			if err != nil {
 				return sendErrorEnvelope(r, err)
@@ -86,6 +121,10 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 		}
 		delivery.ConversationUUID = reply.ConversationUUID
 		if reply.ID > 0 {
+			if hasPending {
+				keepPendingSession = true
+				saveWidgetPendingProfile(app, inbox, contact.ID, sessionToken, pending)
+			}
 			if err := app.conversation.ProcessIncomingMessageHooks(reply, true); err != nil {
 				app.lo.Error("error processing proactive reply hooks", "error", err)
 			}
@@ -95,6 +134,12 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 	if err != nil {
 		return sendErrorEnvelope(r, err)
 	}
+	if hasPending && conversation.ContactID != contact.ID {
+		return sendErrorEnvelope(r, envelope.NewError(envelope.PermissionError, app.i18n.T("widget.conversationNotPermitted"), nil))
+	}
+	if hasPending {
+		app.conversation.BroadcastConversationUpdate(conversation.UUID, map[string]any{"contact": conversation.Contact})
+	}
 	resp, err := buildConversationResponseWithBusinessHours(app, conversation)
 	if err != nil {
 		return sendErrorEnvelope(r, err)
@@ -103,6 +148,10 @@ func handleWidgetCampaignReply(r *fastglue.Request, req chatInitReq, inbox imode
 	if sessionToken != "" {
 		response["session_token"] = sessionToken
 		response["user"] = map[string]any{"user_id": contact.ID, "is_visitor": visitor, "first_name": contact.FirstName, "last_name": contact.LastName}
+		if hasPending {
+			keepPendingSession = true
+			response["identity_provider"] = supportSyncPurpose
+		}
 	}
 	r.RequestCtx.Response.Header.Set("Cache-Control", "no-store")
 	return r.SendEnvelope(response)
