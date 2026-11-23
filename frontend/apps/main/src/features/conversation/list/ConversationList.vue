@@ -143,7 +143,7 @@
           :key="conversation.uuid"
           :conversation="conversation"
           :isCurrent="conversation.uuid === selectedUUID"
-          :contactFullName="conversationStore.getContactFullName(conversation.uuid)"
+          :contactFullName="getContactDisplayName(conversation.contact)"
           :duo="duo"
           :class="{ 'transition-colors duration-200': !duo }"
         />
@@ -213,6 +213,7 @@ import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { permissions } from '@main/constants/permissions'
 import { CONVERSATION_LIST_TYPE } from '@main/constants/conversation'
 import { useBulkActionPermissions } from '@/composables/useBulkActionPermissions'
+import { getContactDisplayName } from '@main/utils/contact-display-name'
 import EmptyList from '@/features/conversation/list/ConversationEmptyList.vue'
 import ConversationListItem from '@/features/conversation/list/ConversationListItem.vue'
 import ConversationListItemSkeleton from '@/features/conversation/list/ConversationListItemSkeleton.vue'

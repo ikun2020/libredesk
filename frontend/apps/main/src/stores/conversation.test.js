@@ -10,6 +10,7 @@ import { WebSocketClient } from '@main/websocket'
 const { api } = vi.hoisted(() => ({ api: {
   getConversationMessage: vi.fn(), getConversationMessages: vi.fn(), updateAssigneeLastSeen: vi.fn(),
   markConversationAsUnread: vi.fn(), getConversation: vi.fn(), getAllConversations: vi.fn(), getUsersCompact: vi.fn(),
+  getAssignedConversations: vi.fn(), getTeamUnassignedConversations: vi.fn(),
   updateConversationStatus: vi.fn(), updateAssignee: vi.fn(), removeAssignee: vi.fn(), getSidebarCounts: vi.fn()
 } }))
 vi.mock('@main/api', () => ({ default: api }))
@@ -174,21 +175,91 @@ it('keeps the latest selection in control of loading and renders it as soon as b
   }
 })
 
+describe('inbox list navigation', () => {
+  const list = (uuid) => ({ data: { data: {
+    results: [{ uuid, status: 'Open', assigned_user_id: 7 }], page: 1, total_pages: 1, total: 1
+  } } })
+
+  it('renders the list immediately when a slow request finishes', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useConversationStore()
+      const pending = Promise.withResolvers()
+      api.getAssignedConversations.mockReturnValueOnce(pending.promise)
+      const request = store.fetchConversationsList(true, 'assigned')
+
+      await vi.advanceTimersByTimeAsync(320)
+      expect(store.conversations.loading).toBe(true)
+      pending.resolve(list('assigned-conversation'))
+      await request
+
+      expect(store.conversations.loading).toBe(false)
+      expect(store.conversationsList.map(row => row.uuid)).toEqual(['assigned-conversation'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the old inbox request and keeps its completion from changing the new list', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useConversationStore()
+      const team = Promise.withResolvers()
+      const assigned = Promise.withResolvers()
+      api.getTeamUnassignedConversations.mockReturnValueOnce(team.promise)
+      api.getAssignedConversations.mockReturnValueOnce(assigned.promise)
+
+      const first = store.fetchConversationsList(true, 'team_unassigned', '21')
+      await vi.advanceTimersByTimeAsync(320)
+      const second = store.fetchConversationsList(true, 'assigned')
+      expect(api.getTeamUnassignedConversations.mock.calls[0][2].aborted).toBe(true)
+      expect(api.getAssignedConversations.mock.calls[0][1].aborted).toBe(false)
+      expect(store.conversations.teamID).toBe(0)
+
+      await vi.advanceTimersByTimeAsync(320)
+      team.resolve(list('team-conversation'))
+      await first
+      expect(store.conversations.data).toEqual([])
+      expect(store.conversations.loading).toBe(true)
+      expect(store.conversations.fetching).toBe(true)
+
+      assigned.resolve(list('assigned-conversation'))
+      await second
+      expect(store.conversations.loading).toBe(false)
+      expect(store.conversations.data.map(row => row.uuid)).toEqual(['assigned-conversation'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lets the initial list finish before a background refresh runs', async () => {
+    const store = useConversationStore()
+    const pending = Promise.withResolvers()
+    api.getAssignedConversations.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(list('new-conversation'))
+    const request = store.fetchConversationsList(true, 'assigned')
+
+    store.refreshConversationList()
+    expect(api.getAssignedConversations).toHaveBeenCalledTimes(1)
+    expect(api.getAssignedConversations.mock.calls[0][1].aborted).toBe(false)
+
+    pending.resolve(list('assigned-conversation'))
+    await request
+    expect(api.getAssignedConversations).toHaveBeenCalledTimes(2)
+    expect(store.conversations.data.map(row => row.uuid)).toContain('new-conversation')
+  })
+})
+
 describe('conversation contact display name', () => {
   it('shows a synced email on the existing conversation when the visitor has the default name', () => {
     const store = setup()
     const current = { type: 'visitor', first_name: 'Visitor', last_name: '', email: null }
     store.conversation.data.contact = { ...current }
-    store.conversations.data[0].contact = { ...current }
 
     expect(store.currentContactName).toBe('Visitor')
-    expect(store.getContactFullName('conversation-a')).toBe('Visitor')
 
     const email = 'customer@example.com'
     store.conversation.data.contact.email = email
-    store.conversations.data[0].contact.email = email
     expect(store.currentContactName).toBe(email)
-    expect(store.getContactFullName('conversation-a')).toBe(email)
     expect(store.conversation.data.contact.first_name).toBe('Visitor')
   })
 
@@ -200,10 +271,8 @@ describe('conversation contact display name', () => {
     const store = setup()
     const contact = { type, first_name, last_name, email: 'customer@example.com' }
     store.conversation.data.contact = { ...contact }
-    store.conversations.data[0].contact = { ...contact }
 
     expect(store.currentContactName).toBe(expected)
-    expect(store.getContactFullName('conversation-a')).toBe(expected)
   })
 })
 

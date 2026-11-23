@@ -391,20 +391,20 @@ const applyMacro = (uuid, id, data) =>
       'Content-Type': 'application/json'
     }
   })
-const getTeamUnassignedConversations = (teamID, params) =>
-  http.get(`/api/v1/teams/${teamID}/conversations/unassigned`, { params, abortOnRoute: true })
-const getAssignedConversations = (params) =>
-  http.get('/api/v1/conversations/assigned', { params, abortOnRoute: true })
-const getUnassignedConversations = (params) =>
-  http.get('/api/v1/conversations/unassigned', { params, abortOnRoute: true })
-const getAllConversations = (params) =>
-  http.get('/api/v1/conversations/all', { params, abortOnRoute: true })
-const getMentionedConversations = (params) =>
-  http.get('/api/v1/conversations/mentioned', { params, abortOnRoute: true })
+const getTeamUnassignedConversations = (teamID, params, signal) =>
+  http.get(`/api/v1/teams/${teamID}/conversations/unassigned`, { params, signal })
+const getAssignedConversations = (params, signal) =>
+  http.get('/api/v1/conversations/assigned', { params, signal })
+const getUnassignedConversations = (params, signal) =>
+  http.get('/api/v1/conversations/unassigned', { params, signal })
+const getAllConversations = (params, signal) =>
+  http.get('/api/v1/conversations/all', { params, signal })
+const getMentionedConversations = (params, signal) =>
+  http.get('/api/v1/conversations/mentioned', { params, signal })
 const getSidebarCounts = () => http.get('/api/v1/conversations/sidebar-counts')
 const getViewCount = (id) => http.get(`/api/v1/views/${id}/count`)
-const getViewConversations = (id, params) =>
-  http.get(`/api/v1/views/${id}/conversations`, { params, abortOnRoute: true })
+const getViewConversations = (id, params, signal) =>
+  http.get(`/api/v1/views/${id}/conversations`, { params, signal })
 const uploadMedia = (data) =>
   http.post('/api/v1/media', data, {
     headers: {

@@ -277,8 +277,7 @@ export const useConversationStore = defineStore('conversation', () => {
       conversationDataCache.delete(oldest)
     }
   }
-  // Bumped on resetConversations() so in-flight requests can drop stale responses.
-  let contextSeq = 0
+  let activeListLoad = null
   let activeConversationLoad = null
   let activeMessageLoad = null
   const emitter = useEmitter()
@@ -428,13 +427,6 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   const currentContactName = computed(() => getContactDisplayName(conversation.data?.contact))
-
-  function getContactFullName (uuid) {
-    if (conversations?.data) {
-      const conv = conversations.data.find(conv => conv.uuid === uuid)
-      return getContactDisplayName(conv?.contact)
-    }
-  }
 
   const current = computed(() => {
     return conversation.data || {}
@@ -776,14 +768,22 @@ export const useConversationStore = defineStore('conversation', () => {
     await fetchConversationsList(false, conversations.listType, conversations.teamID, conversations.listFilters, conversations.viewID, 1)
   }
 
+  function cancelListLoad () {
+    if (!activeListLoad) return
+    activeListLoad.controller.abort()
+    activeListLoad.guard?.cancel()
+    activeListLoad = null
+    conversations.fetching = false
+  }
+
   async function fetchConversationsList (showLoader = true, listType = null, teamID = 0, filters = [], viewID = 0, page = 0) {
     if (!listType) return
     if (conversations.listType !== listType || conversations.teamID !== teamID || conversations.viewID !== viewID) {
       resetConversations()
     }
     conversations.listType = listType
-    if (teamID) conversations.teamID = teamID
-    if (viewID) conversations.viewID = viewID
+    conversations.teamID = teamID
+    conversations.viewID = viewID
     if (conversations.status) {
       filters = filters.filter(f => f.model !== 'conversation_statuses')
       filters.push({
@@ -794,84 +794,55 @@ export const useConversationStore = defineStore('conversation', () => {
       })
     }
     conversations.listFilters = filters
-    const guard = showLoader ? delayedLoading(conversations, 'loading') : null
+    // A conversation route change can leave the inbox list itself unchanged.
+    cancelListLoad()
+    const load = {
+      controller: new AbortController(),
+      guard: showLoader ? delayedLoading(conversations, 'loading', 300, 0) : null,
+      refreshQueued: false
+    }
+    activeListLoad = load
     conversations.fetching = true
     if (page === 0) page = conversations.page
-    const seq = contextSeq
-    const isStale = () => seq !== contextSeq
     try {
       conversations.errorMessage = ''
-      const response = await makeConversationListRequest(listType, teamID, viewID, filters, page)
-      if (isStale()) return
+      const response = await makeConversationListRequest(listType, teamID, viewID, filters, page, load.controller.signal)
+      if (activeListLoad !== load) return
       processConversationListResponse(response)
     } catch (error) {
-      if (isStale()) return
+      if (activeListLoad !== load) return
       if (conversations.data.length === 0) {
         conversations.errorMessage = handleHTTPError(error).message
         conversations.total = 0
       }
     } finally {
-      if (guard) {
-        if (isStale()) guard.cancel()
-        else guard.release()
-      }
-      if (!isStale()) {
+      if (activeListLoad === load) {
+        load.guard?.release()
+        activeListLoad = null
         conversations.initialized = true
         conversations.fetching = false
+        if (load.refreshQueued) void fetchFirstPageConversations()
       }
     }
   }
 
-  async function makeConversationListRequest (listType, teamID, viewID, filters, page) {
-    filters = filters.length > 0 ? JSON.stringify(filters) : []
+  function makeConversationListRequest (listType, teamID, viewID, filters, page, signal) {
+    const sort = sortFieldMap[conversations.sortField]
+    const params = { page, page_size: CONV_LIST_PAGE_SIZE, order_by: `${sort.model}.${sort.field}`, order: sort.order }
+    if (listType !== CONVERSATION_LIST_TYPE.VIEW) params.filters = filters.length > 0 ? JSON.stringify(filters) : []
     switch (listType) {
       case CONVERSATION_LIST_TYPE.ASSIGNED:
-        return await api.getAssignedConversations({
-          page: page,
-          page_size: CONV_LIST_PAGE_SIZE,
-          order_by: sortFieldMap[conversations.sortField].model + "." + sortFieldMap[conversations.sortField].field,
-          order: sortFieldMap[conversations.sortField].order,
-          filters
-        })
+        return api.getAssignedConversations(params, signal)
       case CONVERSATION_LIST_TYPE.UNASSIGNED:
-        return await api.getUnassignedConversations({
-          page: page,
-          page_size: CONV_LIST_PAGE_SIZE,
-          order_by: sortFieldMap[conversations.sortField].model + "." + sortFieldMap[conversations.sortField].field,
-          order: sortFieldMap[conversations.sortField].order,
-          filters
-        })
+        return api.getUnassignedConversations(params, signal)
       case CONVERSATION_LIST_TYPE.ALL:
-        return await api.getAllConversations({
-          page: page,
-          page_size: CONV_LIST_PAGE_SIZE,
-          order_by: sortFieldMap[conversations.sortField].model + "." + sortFieldMap[conversations.sortField].field,
-          order: sortFieldMap[conversations.sortField].order,
-          filters
-        })
+        return api.getAllConversations(params, signal)
       case CONVERSATION_LIST_TYPE.TEAM_UNASSIGNED:
-        return await api.getTeamUnassignedConversations(teamID, {
-          page: page,
-          page_size: CONV_LIST_PAGE_SIZE,
-          order_by: sortFieldMap[conversations.sortField].model + "." + sortFieldMap[conversations.sortField].field,
-          order: sortFieldMap[conversations.sortField].order,
-          filters
-        })
+        return api.getTeamUnassignedConversations(teamID, params, signal)
       case CONVERSATION_LIST_TYPE.VIEW:
-        return await api.getViewConversations(viewID, {
-          page: page,
-          page_size: CONV_LIST_PAGE_SIZE,
-          order_by: sortFieldMap[conversations.sortField].model + "." + sortFieldMap[conversations.sortField].field,
-          order: sortFieldMap[conversations.sortField].order
-        })
+        return api.getViewConversations(viewID, params, signal)
       case CONVERSATION_LIST_TYPE.MENTIONED:
-        return await api.getMentionedConversations({
-          page: page,
-          page_size: CONV_LIST_PAGE_SIZE,
-          order_by: sortFieldMap[conversations.sortField].model + "." + sortFieldMap[conversations.sortField].field,
-          order: sortFieldMap[conversations.sortField].order,
-          filters
-        })
+        return api.getMentionedConversations(params, signal)
       default:
         throw new Error('Invalid conversation list type: ' + listType)
     }
@@ -1056,7 +1027,13 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   // trailing=true: fires one final refresh after a burst so the list converges to latest state.
-  const throttledFetchFirstPage = useThrottleFn(fetchFirstPageConversations, 60000, true)
+  const throttledFetchFirstPage = useThrottleFn(() => {
+    if (activeListLoad) {
+      activeListLoad.refreshQueued = true
+      return
+    }
+    return fetchFirstPageConversations()
+  }, 60000, true)
 
   function refreshConversationList () {
     throttledFetchFirstPage()
@@ -1339,12 +1316,12 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   function resetConversations () {
+    cancelListLoad()
     conversations.data = []
     conversations.page = 1
     conversations.initialized = false
     conversations.hasMore = false
     conversations.total = 0
-    contextSeq++
     pendingNotificationUUIDs.clear()
     clearSelection()
   }
@@ -1515,7 +1492,6 @@ export const useConversationStore = defineStore('conversation', () => {
     handleConvPush,
     mergeContactUpdate,
     addNewConversation,
-    getContactFullName,
     fetchNextMessages,
     ensureLinkedMessage,
     fetchNextConversations,
