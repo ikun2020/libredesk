@@ -22,7 +22,7 @@
           :key="prompt.key"
           @select="complete(prompt.key)"
         >
-          {{ prompt.title }}
+          {{ editorPromptField(prompt, 'title', $t) }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -337,6 +337,7 @@
 </template>
 
 <script setup>
+import { editorPromptField } from '@main/utils/editorPromptDisplay'
 import { ref } from 'vue'
 import {
   ChevronDown,

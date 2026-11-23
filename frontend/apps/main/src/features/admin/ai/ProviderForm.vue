@@ -14,7 +14,7 @@
             </SelectTrigger>
             <SelectContent>
               <SelectItem v-for="p in presets" :key="p.value" :value="p.value">
-                {{ p.label }}
+                {{ p.labelKey ? t(p.labelKey) : p.label }}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -237,7 +237,7 @@ const completionPresets = [
   },
   {
     value: 'ollama',
-    label: 'Ollama (local)',
+    labelKey: 'admin.ai.preset.ollamaLocal',
     base_url: 'http://localhost:11434/v1',
     model: 'llama3.1'
   }
@@ -259,7 +259,7 @@ const embeddingPresets = [
   },
   {
     value: 'ollama',
-    label: 'Ollama (local)',
+    labelKey: 'admin.ai.preset.ollamaLocal',
     base_url: 'http://localhost:11434/v1',
     model: 'nomic-embed-text',
     dimensions: '768'

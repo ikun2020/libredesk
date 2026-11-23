@@ -1,10 +1,12 @@
 import { h } from 'vue'
 import TableDate from '@main/components/table/TableDate.vue'
+import { editorPromptField } from '@main/utils/editorPromptDisplay'
 import dropdown from './editorPromptDropdown.vue'
 
 export const createEditorPromptColumns = (t, { onEdit } = {}) => [
   {
-    accessorKey: 'title',
+    id: 'title',
+    accessorFn: (prompt) => editorPromptField(prompt, 'title', t),
     header: () => h('div', null, t('globals.terms.title')),
     cell: ({ row }) =>
       h(

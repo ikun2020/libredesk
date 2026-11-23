@@ -62,7 +62,7 @@
 
     <FormField v-slot="{ componentField, handleChange, meta }" name="headers">
       <FormItem>
-        <FormLabel>{{ t('globals.terms.header', 2) }}</FormLabel>
+        <FormLabel>{{ t('admin.ai.tool.headers') }}</FormLabel>
         <FormControl>
           <ToolHeadersField
             :modelValue="componentField.modelValue"

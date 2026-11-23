@@ -65,6 +65,7 @@ import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
 import { useAiPromptStore } from '@main/stores/aiPrompt'
+import { editorPromptField } from '@main/utils/editorPromptDisplay'
 
 const searchTerm = ref('')
 const { t } = useI18n()
@@ -75,7 +76,7 @@ const isLoading = ref(false)
 const dialogOpen = ref(false)
 const isEditing = ref(false)
 const initialValues = ref({})
-const editingId = ref(null)
+const editingPrompt = ref(null)
 
 const refreshHandler = (data) => {
   if (data?.model === 'ai_editor_prompts') refreshPrompts()
@@ -110,16 +111,20 @@ const refreshPrompts = async () => {
 
 const newPrompt = () => {
   isEditing.value = false
-  editingId.value = null
+  editingPrompt.value = null
   initialValues.value = {}
 }
 
 const editPrompt = async (item) => {
   try {
     const resp = await api.getAIPrompt(item.id)
+    const prompt = resp.data.data
     isEditing.value = true
-    editingId.value = item.id
-    initialValues.value = resp.data.data
+    editingPrompt.value = prompt
+    initialValues.value = {
+      title: editorPromptField(prompt, 'title', t),
+      content: editorPromptField(prompt, 'content', t)
+    }
     dialogOpen.value = true
   } catch (error) {
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
@@ -132,7 +137,12 @@ const editPrompt = async (item) => {
 const submitPrompt = async (values) => {
   try {
     if (isEditing.value) {
-      await api.updateAIPrompt(editingId.value, values)
+      const original = editingPrompt.value
+      const initial = initialValues.value
+      await api.updateAIPrompt(original.id, {
+        title: values.title === initial.title ? original.title : values.title,
+        content: values.content === initial.content ? original.content : values.content
+      })
     } else {
       await api.createAIPrompt(values)
     }

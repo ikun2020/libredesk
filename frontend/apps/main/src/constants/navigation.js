@@ -49,7 +49,7 @@ export const adminNavItems = [
   },
   {
     titleKey: 'admin.ai.title',
-    badge: 'BETA',
+    badgeKey: 'globals.terms.beta',
     children: [
       {
         titleKey: 'globals.terms.provider',

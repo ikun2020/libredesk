@@ -69,7 +69,7 @@ const form = useForm({
       title: z
         .string({ required_error: t('globals.messages.required') })
         .min(1, { message: t('globals.messages.required') })
-        .max(140),
+        .max(140, { message: t('globals.messages.maxLength', { max: 140 }) }),
       content: z
         .string({ required_error: t('globals.messages.required') })
         .min(1, { message: t('globals.messages.required') })

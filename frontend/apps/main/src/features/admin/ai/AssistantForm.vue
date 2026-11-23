@@ -325,8 +325,8 @@ const form = useForm({
       tone: z.string().optional(),
       response_length: z.string().optional(),
       max_turns: z.coerce
-        .number()
-        .int()
+        .number({ invalid_type_error: t('admin.ai.positiveNumber') })
+        .int({ message: t('admin.ai.positiveNumber') })
         .min(1, { message: t('admin.ai.assistant.maxTurnsHint') })
         .max(20, { message: t('admin.ai.assistant.maxTurnsHint') }),
       fallback_team_id: z.string().optional(),
