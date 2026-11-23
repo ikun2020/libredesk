@@ -569,10 +569,26 @@ SELECT uuid from conversations where id = $1;
 SELECT inbox_id, contact_id FROM conversations WHERE uuid = $1;
 
 -- name: update-conversation-assigned-user
+-- $3 protects automatic AI assignments, $4 marks an explicit assignment back to AI.
+-- Older transfers are recorded in ai_agent_events and have no flag in meta.
 UPDATE conversations
 SET assigned_user_id = $2,
-updated_at = NOW()
-WHERE uuid = $1;
+    meta = CASE WHEN $4::boolean THEN meta || '{"ai_handoff": false}'::jsonb ELSE meta END,
+    updated_at = NOW()
+WHERE uuid = $1 AND assigned_user_id IS DISTINCT FROM $2
+  AND NOT ($3::boolean AND COALESCE((meta->'ai_handoff') = 'true'::jsonb, EXISTS (
+      SELECT 1 FROM ai_agent_events WHERE conversation_id = conversations.id AND type = 'handoff'
+  )));
+
+-- name: handoff-conversation-to-human
+-- Mark the transfer and release the assistant together, provided it still owns the conversation.
+UPDATE conversations
+SET assigned_user_id = NULL,
+    assigned_team_id = COALESCE((SELECT id FROM teams WHERE id = $3), assigned_team_id),
+    meta = meta || '{"ai_handoff": true}'::jsonb,
+    updated_at = NOW()
+WHERE uuid = $1 AND assigned_user_id = $2
+RETURNING COALESCE(assigned_team_id, 0);
 
 -- name: claim-unassigned-conversation
 -- Assigns only if the conversation is still unassigned in the team and the user is still an enabled, non-away agent of that team.

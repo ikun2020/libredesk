@@ -363,6 +363,7 @@ type queries struct {
 	UpsertUserLastSeen                  *sqlx.Stmt `query:"upsert-user-last-seen"`
 	MarkConversationUnread              *sqlx.Stmt `query:"mark-conversation-unread"`
 	UpdateConversationAssignedUser      *sqlx.Stmt `query:"update-conversation-assigned-user"`
+	HandoffConversationToHuman          *sqlx.Stmt `query:"handoff-conversation-to-human"`
 	ClaimUnassignedConversation         *sqlx.Stmt `query:"claim-unassigned-conversation"`
 	UpdateConversationAssignedTeam      *sqlx.Stmt `query:"update-conversation-assigned-team"`
 	UpdateConversationCustomAttributes  *sqlx.Stmt `query:"update-conversation-custom-attributes"`
@@ -864,6 +865,10 @@ func (c *Manager) StartConversationWaitingSince(conversationUUID string, at time
 
 // UpdateConversationUserAssignee sets the assignee of a conversation to a specifc user.
 func (c *Manager) UpdateConversationUserAssignee(uuid string, assigneeID int, actor umodels.User) error {
+	return c.updateConversationUserAssignee(uuid, assigneeID, actor, false)
+}
+
+func (c *Manager) updateConversationUserAssignee(uuid string, assigneeID int, actor umodels.User, automated bool) error {
 	previousConversation, err := c.GetConversation(0, uuid, "")
 	if err != nil {
 		return err
@@ -883,9 +888,17 @@ func (c *Manager) UpdateConversationUserAssignee(uuid string, assigneeID int, ac
 		return envelope.NewError(envelope.InputError, c.i18n.T("conversation.assigneeDisabled"), nil)
 	}
 
-	if err := c.updateAssignee(uuid, assigneeID, models.AssigneeTypeUser); err != nil {
+	prev, prevErr := c.GetConversationListItem(uuid)
+	isAI := assignee.Type == umodels.UserTypeAIAssistant
+	result, err := c.q.UpdateConversationAssignedUser.Exec(uuid, assigneeID, isAI && automated, isAI && !automated)
+	if err != nil {
+		c.lo.Error("error updating conversation assignee", "uuid", uuid, "error", err)
 		return envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return nil
+	}
+	c.broadcastReassignment(uuid, prev, prevErr)
 	return c.afterUserAssignedHooks(uuid, assigneeID, actor, amodels.PreviousValues(previousConversation))
 }
 
@@ -972,31 +985,39 @@ func (c *Manager) UpdateConversationTeamAssignee(uuid string, teamID int, actor 
 	if err != nil {
 		return err
 	}
-	previousAssignedTeamID := conversation.AssignedTeamID.Int
-	previousValues := amodels.PreviousValues(conversation)
-
-	if err := c.updateAssignee(uuid, teamID, models.AssigneeTypeTeam); err != nil {
+	prev, prevErr := c.GetConversationListItem(uuid)
+	if _, err := c.q.UpdateConversationAssignedTeam.Exec(uuid, teamID); err != nil {
+		c.lo.Error("error updating conversation team assignee", "uuid", uuid, "error", err)
 		return envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
+	c.broadcastReassignment(uuid, prev, prevErr)
+	c.afterTeamAssignedHooks(conversation, teamID, actor, false)
+	return nil
+}
 
+// afterTeamAssignedHooks runs the shared side effects for a team assignment.
+func (c *Manager) afterTeamAssignedHooks(conversation models.Conversation, teamID int, actor umodels.User, userAlreadyRemoved bool) {
+	uuid := conversation.UUID
 	// Assignment succeeded, errors after this point are non-critical and must not skip the remaining side effects.
 	if err := c.RecordAssigneeTeamChange(uuid, teamID, actor); err != nil {
 		c.lo.Error("error recording team assignee change", "uuid", uuid, "error", err)
 	}
 
 	// Team changed?
-	if previousAssignedTeamID != teamID {
+	if conversation.AssignedTeamID.Int != teamID {
 		// Remove assigned user if team has changed.
-		if err := c.RemoveConversationAssignee(uuid, models.AssigneeTypeUser, actor); err != nil {
-			c.lo.Error("error removing conversation assignee after team change", "uuid", uuid, "error", err)
+		if !userAlreadyRemoved {
+			if err := c.RemoveConversationAssignee(uuid, models.AssigneeTypeUser, actor); err != nil {
+				c.lo.Error("error removing conversation assignee after team change", "uuid", uuid, "error", err)
+			}
 		}
 
 		updatedConversation, err := c.GetConversation(0, uuid, "")
 		if err != nil {
 			c.lo.Error("error fetching conversation after team assignment", "uuid", uuid, "error", err)
-		} else {
+		} else if updatedConversation.AssignedTeamID.Int == teamID {
 			c.applyTeamSLA(updatedConversation, teamID)
-			c.automation.EvaluateConversationUpdateRules(updatedConversation, amodels.EventConversationTeamAssigned, previousValues, actor)
+			c.automation.EvaluateConversationUpdateRules(updatedConversation, amodels.EventConversationTeamAssigned, amodels.PreviousValues(conversation), actor)
 		}
 	}
 
@@ -1004,8 +1025,27 @@ func (c *Manager) UpdateConversationTeamAssignee(uuid string, teamID int, actor 
 	c.BroadcastConversationToWidget(uuid, conversation.ContactID, conversation.InboxID, map[string]any{
 		"assigned_team_id": teamID,
 	})
+}
 
-	return nil
+// HandoffConversationToHuman records the transfer and clears the assistant as one write.
+// If someone else has already taken the conversation, leave their assignment alone.
+func (c *Manager) HandoffConversationToHuman(conversation models.Conversation, fallbackTeamID int, assistant umodels.User) (bool, error) {
+	uuid := conversation.UUID
+	prev, prevErr := c.GetConversationListItem(uuid)
+	var teamID int
+	err := c.q.HandoffConversationToHuman.QueryRow(uuid, assistant.ID, fallbackTeamID).Scan(&teamID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("handing off conversation: %w", err)
+	}
+
+	c.afterAssigneeRemoved(uuid, models.AssigneeTypeUser, assistant, prev, prevErr)
+	if teamID > 0 && teamID == fallbackTeamID {
+		c.afterTeamAssignedHooks(conversation, teamID, assistant, true)
+	}
+	return true, nil
 }
 
 // applyTeamSLA applies the team's SLA policy to the conversation if the team has one, logging failures.
@@ -1625,7 +1665,8 @@ func (m *Manager) ApplyAction(action amodels.RuleAction, conv models.Conversatio
 	}
 
 	// Fall back to system user if user is not provided.
-	if user.ID == 0 {
+	automated := user.ID == 0
+	if automated {
 		var err error
 		if user, err = m.userStore.GetSystemUser(); err != nil {
 			return fmt.Errorf("get system user: %w", err)
@@ -1651,7 +1692,7 @@ func (m *Manager) ApplyAction(action amodels.RuleAction, conv models.Conversatio
 		if err != nil {
 			return fmt.Errorf("invalid agent ID %q: %w", action.Value[0], err)
 		}
-		return m.UpdateConversationUserAssignee(conv.UUID, agentID, user)
+		return m.updateConversationUserAssignee(conv.UUID, agentID, user, automated)
 	case amodels.ActionSetPriority:
 		priorityID, err := strconv.Atoi(action.Value[0])
 		if err != nil {
@@ -1890,7 +1931,11 @@ func (m *Manager) RemoveConversationAssignee(uuid, typ string, actor umodels.Use
 		m.lo.Error("error removing conversation assignee", "error", err)
 		return envelope.NewError(envelope.GeneralError, m.i18n.T("globals.messages.errorUpdatingConversation"), nil)
 	}
+	m.afterAssigneeRemoved(uuid, typ, actor, prev, prevErr)
+	return nil
+}
 
+func (m *Manager) afterAssigneeRemoved(uuid, typ string, actor umodels.User, prev models.ConversationListItem, prevErr error) {
 	// Trigger webhook for conversation unassigned from user.
 	if typ == models.AssigneeTypeUser {
 		conversation, err := m.GetConversation(0, uuid, "")
@@ -1904,25 +1949,14 @@ func (m *Manager) RemoveConversationAssignee(uuid, typ string, actor umodels.Use
 		})
 
 		// Broadcast conversation update to widget clients when user assignee is removed.
-		if conversation.ID != 0 {
+		if conversation.ID != 0 && !conversation.AssignedUserID.Valid {
 			m.BroadcastConversationToWidget(uuid, conversation.ContactID, conversation.InboxID, map[string]any{
 				"assignee": nil,
 			})
 		}
 	}
 
-	next, nextErr := m.GetConversationListItem(uuid)
-	if nextErr != nil {
-		m.lo.Error("error fetching conversation list item for unassign broadcast", "uuid", uuid, "error", nextErr)
-		return nil
-	}
-	var prevPtr *models.ConversationListItem
-	if prevErr == nil {
-		prevPtr = &prev
-	}
-	m.BroadcastConvReassignment(prevPtr, &next)
-
-	return nil
+	m.broadcastReassignment(uuid, prev, prevErr)
 }
 
 // SendCSATReply sends a CSAT reply message to a conversation. No-op if one was already sent.
@@ -2397,27 +2431,6 @@ func (c *Manager) FilterAuthorizedListUUIDs(agentID int, uuids []string) ([]stri
 		return nil, err
 	}
 	return authorized, nil
-}
-
-// updateAssignee updates the team / user assignee of a conversation and broadcasts the reassignment to connected clients.
-func (c *Manager) updateAssignee(uuid string, assigneeID int, assigneeType string) error {
-	prev, prevErr := c.GetConversationListItem(uuid)
-	switch assigneeType {
-	case models.AssigneeTypeUser:
-		if _, err := c.q.UpdateConversationAssignedUser.Exec(uuid, assigneeID); err != nil {
-			c.lo.Error("error updating conversation assignee", "error", err)
-			return fmt.Errorf("updating assignee: %w", err)
-		}
-	case models.AssigneeTypeTeam:
-		if _, err := c.q.UpdateConversationAssignedTeam.Exec(uuid, assigneeID); err != nil {
-			c.lo.Error("error updating conversation assignee", "error", err)
-			return fmt.Errorf("updating assignee: %w", err)
-		}
-	default:
-		return fmt.Errorf("invalid assignee type: %s", assigneeType)
-	}
-	c.broadcastReassignment(uuid, prev, prevErr)
-	return nil
 }
 
 // filterLocation returns the configured app timezone for resolving date filters. The builder normalizes invalid/empty values to UTC.

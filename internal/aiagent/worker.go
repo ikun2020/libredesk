@@ -354,12 +354,16 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	stopTyping()
 	// A human agent may have taken over or resolved the conversation mid-run; if so, drop this
 	// run's reply and status actions instead of talking over them.
-	if fresh, ferr := m.convo.GetConversation(convID, "", ""); ferr == nil {
-		if !fresh.AssignedUserID.Valid || int(fresh.AssignedUserID.Int) != assistant.UserID || nonActionableCategories[fresh.StatusCategory.String] {
-			m.lo.Debug("ai agent conversation changed mid-run, dropping reply", "conversation_uuid", conv.UUID)
-			return
-		}
+	fresh, ferr := m.convo.GetConversation(convID, "", "")
+	if ferr != nil {
+		m.lo.Error("error checking conversation before AI reply", "conversation_uuid", conv.UUID, "error", ferr)
+		return
 	}
+	if !fresh.AssignedUserID.Valid || int(fresh.AssignedUserID.Int) != assistant.UserID || nonActionableCategories[fresh.StatusCategory.String] {
+		m.lo.Debug("ai agent conversation changed mid-run, dropping reply", "conversation_uuid", conv.UUID)
+		return
+	}
+	conv = fresh
 	if err != nil {
 		m.lo.Error("error running ai agent", "conversation_uuid", conv.UUID, "error", err)
 		reason := m.i18n.T("ai.agent.handoffError")
@@ -375,7 +379,16 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	answer, answerSuggestions := splitSuggestions(answer)
 	confirm, confirmSuggestions := splitSuggestions(confirm)
 	answer = formatHandoffReply(answer, inbound.TextContent, outcome.handedOff, m.i18n.T("ai.agent.handoffNotice"))
-	if outcome.resolved || outcome.handedOff {
+	if outcome.handedOff {
+		if m.requestHandoffForm(conv, assistant) {
+			return
+		}
+		if transferred, _ := m.handoff(conv, assistant, outcome.handoffReason); transferred && answer != "" {
+			_ = m.postReply(conv, assistant, answer, replyMeta(nil, articleIDs))
+		}
+		return
+	}
+	if outcome.resolved {
 		confirm, answerSuggestions, confirmSuggestions = "", nil, nil
 	} else {
 		confirm, confirmSuggestions = localizeConfirmation(answer, confirm, confirmSuggestions)
@@ -402,14 +415,6 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 			m.handoff(conv, assistant, m.i18n.T("ai.agent.handoffError"))
 			return
 		}
-	}
-	if outcome.handedOff {
-		m.lo.Debug("ai agent handed off", "conversation_uuid", conv.UUID)
-		if m.requestHandoffForm(conv, assistant) {
-			return
-		}
-		m.handoff(conv, assistant, outcome.handoffReason)
-		return
 	}
 	if outcome.resolved && (answer != "" || turns > 0) {
 		m.resolve(conv, assistant)
@@ -486,15 +491,17 @@ func (m *Manager) CompleteHandoff(conv cmodels.Conversation) error {
 	if len(messages) == 0 || !messageMetaBool(messages[0].Meta, "handoff_form_pending") {
 		return fmt.Errorf("conversation has no pending handoff form")
 	}
-	// A refresh re-shows the form from the saved flag, and two submits racing must hand off only once.
-	cleared, err := m.convo.ClearHandoffFormPending(messages[0].UUID)
+	// Only the submission that releases the assigned assistant can complete the transfer.
+	moved, err := m.handoff(conv, assistant, "")
 	if err != nil {
 		return err
 	}
-	if !cleared {
-		return fmt.Errorf("conversation has no pending handoff form")
+	if !moved {
+		return fmt.Errorf("conversation is no longer assigned to the assistant")
 	}
-	m.handoff(conv, assistant, "")
+	if _, err := m.convo.ClearHandoffFormPending(messages[0].UUID); err != nil {
+		m.lo.Error("error clearing completed handoff form", "conversation_uuid", conv.UUID, "error", err)
+	}
 	return nil
 }
 
@@ -523,9 +530,17 @@ func (m *Manager) requestHandoffForm(conv cmodels.Conversation, assistant models
 	return true
 }
 
-// handoff notes the reason and moves the conversation to the fallback team, or unassigns if none is set.
-func (m *Manager) handoff(conv cmodels.Conversation, assistant models.Assistant, reason string) {
+// handoff transfers the conversation and records the reason once the transfer succeeds.
+func (m *Manager) handoff(conv cmodels.Conversation, assistant models.Assistant, reason string) (bool, error) {
 	actor := m.actorUser(assistant)
+	moved, err := m.convo.HandoffConversationToHuman(conv, assistant.FallbackTeamID.Int, actor)
+	if err != nil {
+		m.lo.Error("error handing off AI conversation", "conversation_uuid", conv.UUID, "error", err)
+		return false, err
+	}
+	if !moved {
+		return false, nil
+	}
 	note := strings.TrimSpace(reason)
 	if note == "" {
 		note = m.i18n.T("ai.agent.handoffDefault")
@@ -533,28 +548,8 @@ func (m *Manager) handoff(conv cmodels.Conversation, assistant models.Assistant,
 	if _, err := m.convo.SendPrivateNote(nil, assistant.UserID, conv.UUID, note, nil); err != nil {
 		m.lo.Error("error posting handoff note", "conversation_uuid", conv.UUID, "error", err)
 	}
-	movedToTeam := false
-	if assistant.FallbackTeamID.Valid {
-		if err := m.convo.UpdateConversationTeamAssignee(conv.UUID, int(assistant.FallbackTeamID.Int), actor); err != nil {
-			m.lo.Error("error assigning fallback team", "conversation_uuid", conv.UUID, "error", err)
-		} else {
-			movedToTeam = true
-		}
-		// A same-team assignment keeps the assigned user, and a failed one removes nothing, so
-		// re-check who is assigned instead of trusting the pre-run snapshot.
-		fresh, err := m.convo.GetConversation(conv.ID, "", "")
-		if err == nil && (!fresh.AssignedUserID.Valid || int(fresh.AssignedUserID.Int) != assistant.UserID) {
-			m.recordEvent(assistant.ID, conv.ID, "handoff")
-			return
-		}
-	}
-	if err := m.convo.RemoveConversationAssignee(conv.UUID, cmodels.AssigneeTypeUser, actor); err != nil {
-		m.lo.Error("error unassigning assistant on handoff", "conversation_uuid", conv.UUID, "error", err)
-		if !movedToTeam {
-			return
-		}
-	}
 	m.recordEvent(assistant.ID, conv.ID, "handoff")
+	return true, nil
 }
 
 func (m *Manager) actorUser(a models.Assistant) umodels.User {
