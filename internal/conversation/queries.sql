@@ -919,15 +919,20 @@ SET content = $5,
         WHEN $4 THEN jsonb_build_object('recalled_at', statement_timestamp())
         ELSE COALESCE(meta, '{}'::jsonb) || jsonb_build_object('edited_at', statement_timestamp())
     END
-WHERE conversation_id = $1 AND uuid = $2 AND sender_id = $3
+WHERE conversation_id = $1 AND uuid = $2
   AND type = 'outgoing' AND sender_type = 'agent' AND private = false AND status = 'sent'
   AND meta->>'recalled_at' IS NULL
   AND COALESCE(meta->>'is_csat', 'false') <> 'true'
-  AND COALESCE(meta->>'is_automated', 'false') <> 'true'
   AND COALESCE(meta->>'continuity_email', 'false') <> 'true'
   AND meta->>'campaign_id' IS NULL
+  AND CASE
+      WHEN meta->>'is_automated' = 'true' OR meta->>'ai_assistant_id' IS NOT NULL
+          OR EXISTS (SELECT 1 FROM users WHERE users.id = conversation_messages.sender_id AND users.type = 'ai_assistant')
+      THEN $4
+      ELSE sender_id = $3
+  END
   AND ($4 OR (text_content ~ '[^[:space:]]' AND created_at >= statement_timestamp() - INTERVAL '5 minutes'))
-RETURNING id, uuid, created_at, updated_at, content, text_content, COALESCE(content_type::text, '') AS content_type, meta,
+RETURNING id, uuid, sender_id, created_at, updated_at, content, text_content, COALESCE(content_type::text, '') AS content_type, meta,
           (meta->>'edited_at')::timestamptz AS edited_at, (meta->>'recalled_at')::timestamptz AS recalled_at;
 
 -- name: unlink-recalled-message-media

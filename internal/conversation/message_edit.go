@@ -24,7 +24,7 @@ var liveChatEditSanitizer = func() *bluemonday.Policy {
 	return policy
 }()
 
-// ChangeLiveChatMessage edits or recalls an agent's public web chat message and broadcasts the committed changes.
+// ChangeLiveChatMessage edits or recalls a public web chat reply and broadcasts the committed changes.
 func (m *Manager) ChangeLiveChatMessage(conversationUUID, messageUUID string, agent umodels.User, content string, recall bool) (map[string]any, error) {
 	denied := func() error {
 		return envelope.NewError(envelope.PermissionError, m.i18n.T("status.deniedPermission"), nil)
@@ -68,7 +68,7 @@ func (m *Manager) ChangeLiveChatMessage(conversationUUID, messageUUID string, ag
 	}
 
 	var preview models.ConversationListItem
-	err = tx.Stmtx(m.q.RefreshLiveChatMessagePreviews).Get(&preview, conversation.ID, message.CreatedAt, agent.ID,
+	err = tx.Stmtx(m.q.RefreshLiveChatMessagePreviews).Get(&preview, conversation.ID, message.CreatedAt, message.SenderID,
 		m.i18n.T("globals.terms.image"), m.i18n.T("globals.terms.video"), m.i18n.T("globals.terms.audio"), m.i18n.T("globals.terms.file"))
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, m.liveChatMessageChangeError(err)

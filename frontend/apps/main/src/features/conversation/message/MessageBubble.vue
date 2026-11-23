@@ -74,7 +74,7 @@
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem v-if="canRecall && editWindowOpen && hasEditableText" @select="openEdit">
+              <DropdownMenuItem v-if="canEdit && editWindowOpen && hasEditableText" @select="openEdit">
                 <Pencil class="mr-2 h-4 w-4" />
                 {{ t('conversation.editMessage') }}
               </DropdownMenuItem>
@@ -525,15 +525,22 @@ const canDeleteNote = computed(
     !isDeleted.value &&
     (props.message.sender_id === userStore.userID || userStore.hasAdminRole)
 )
+const isAutomaticReply = computed(() => {
+  const meta = props.message.meta || {}
+  return meta.is_automated === true || meta.is_automated === 'true' ||
+    meta.ai_assistant_id != null || isAIAssistant.value
+})
 const canRecall = computed(() => {
   const message = props.message
   return convStore.current?.inbox_channel === 'livechat' && isOutgoing.value &&
     !message.private && !message.recalled_at && message.status === 'sent' &&
-    message.id > 0 && message.sender_type === 'agent' && message.sender_id === userStore.userID &&
-    userStore.can('messages:write') && !isSystemUser.value &&
-    !message.meta?.is_csat && !message.meta?.is_automated &&
-    !message.meta?.continuity_email && !message.meta?.campaign_id
+    message.id > 0 && message.type === 'outgoing' && message.sender_type === 'agent' &&
+    userStore.can('messages:write') &&
+    (isAutomaticReply.value || (message.sender_id === userStore.userID && !isSystemUser.value)) &&
+    !message.meta?.is_csat &&
+    !message.meta?.continuity_email && message.meta?.campaign_id == null
 })
+const canEdit = computed(() => canRecall.value && !isAutomaticReply.value)
 const hasEditableText = computed(() => Boolean(props.message.text_content?.trim()))
 const editDeadline = computed(() => Date.parse(props.message.created_at) + MESSAGE_EDIT_WINDOW_MS)
 
@@ -563,7 +570,7 @@ const confirmRemoval = async () => {
 }
 
 const openEdit = () => {
-  if (!canRecall.value || !hasEditableText.value || Date.now() >= editDeadline.value) return
+  if (!canEdit.value || !hasEditableText.value || Date.now() >= editDeadline.value) return
   const { content, content_type, text_content } = props.message
   editText.value = text_content
   if (content_type === 'text') {
@@ -583,7 +590,7 @@ const onEditOpenChange = (open) => {
 
 const saveEdit = async () => {
   const conversationUUID = convStore.current?.uuid
-  if (!conversationUUID || !canRecall.value || !canSaveEdit.value) return
+  if (!conversationUUID || !canEdit.value || !canSaveEdit.value) return
   mutationPending.value = true
   try {
     const saved = await convStore.editLiveChatMessage(conversationUUID, props.message.uuid, editHTML.value)
