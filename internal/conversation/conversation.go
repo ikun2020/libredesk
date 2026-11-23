@@ -357,6 +357,7 @@ type queries struct {
 	GetUserActiveConversationsCount     *sqlx.Stmt `query:"get-user-active-conversations-count"`
 	GetSidebarStandardCounts            *sqlx.Stmt `query:"get-sidebar-standard-counts"`
 	GetConversationsCountBase           string     `query:"get-conversations-count-base"`
+	GetBulkOpenConversationCandidates   string     `query:"get-bulk-open-conversation-candidates"`
 	StartConversationWaitingSince       *sqlx.Stmt `query:"start-conversation-waiting-since"`
 	UpdateConversationReplyTimestamps   *sqlx.Stmt `query:"update-conversation-reply-timestamps"`
 	UpdateConversationContactLastSeen   *sqlx.Stmt `query:"update-conversation-contact-last-seen"`
@@ -1152,18 +1153,39 @@ func (c *Manager) UpdateConversationStatus(uuid string, statusID int, status, sn
 		c.lo.Error("error fetching conversation before status change", "uuid", uuid, "error", err)
 		return envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
+
+	_, err = c.updateConversationStatus(conversationBeforeChange, status, snoozeUntil, actor, nil)
+	return err
+}
+
+// UpdateOpenConversationStatus changes the status only if the authorized open snapshot is current.
+func (c *Manager) UpdateOpenConversationStatus(conversation models.Conversation, status string, actor umodels.User) (bool, error) {
+	if conversation.StatusCategory.String != smodels.CategoryOpen ||
+		!authz.CanReadAssignment(actor, conversation.AssignedUserID, conversation.AssignedTeamID) {
+		return false, nil
+	}
+	return c.updateConversationStatus(conversation, status, time.Time{}, actor, &conversation.UpdatedAt)
+}
+
+func (c *Manager) updateConversationStatus(conversationBeforeChange models.Conversation, status string, snoozeUntil time.Time, actor umodels.User, expectedUpdatedAt *time.Time) (bool, error) {
+	uuid := conversationBeforeChange.UUID
 	oldStatus := conversationBeforeChange.Status.String
 
 	// Status not changed and not snoozed. Return early.
 	if oldStatus == status && status != models.StatusSnoozed {
 		c.lo.Debug("no status update: conversation status unchanged and not snoozed", "uuid", uuid, "old_status", oldStatus, "new_status", status)
-		return nil
+		return false, nil
 	}
 
 	// Update the conversation status.
-	if _, err := c.q.UpdateConversationStatus.Exec(uuid, status, snoozeUntil); err != nil {
+	result, err := c.q.UpdateConversationStatus.Exec(uuid, status, snoozeUntil, expectedUpdatedAt,
+		conversationBeforeChange.AssignedUserID, conversationBeforeChange.AssignedTeamID)
+	if err != nil {
 		c.lo.Error("error updating conversation status", "error", err)
-		return envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
+		return false, envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return false, nil
 	}
 
 	// Stamps a just-resolved resolution SLA immediately and recomputes the cached deadline.
@@ -1193,7 +1215,7 @@ func (c *Manager) UpdateConversationStatus(uuid string, statusID int, status, sn
 
 	// Record the status change as an activity.
 	if err := c.RecordStatusChange(status, uuid, actor); err != nil {
-		return envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
+		return true, envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
 	}
 
 	agentData := map[string]any{"status": status}
@@ -1241,7 +1263,7 @@ func (c *Manager) UpdateConversationStatus(uuid string, statusID int, status, sn
 		"status_category": conversation.StatusCategory.String,
 	})
 
-	return nil
+	return true, nil
 }
 
 // SetConversationTags sets the tags associated with a conversation.

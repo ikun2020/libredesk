@@ -643,7 +643,21 @@ SET status_id        = (SELECT id FROM new_status),
     closed_at        = COALESCE(closed_at,   CASE WHEN $2 = 'Closed'                                  THEN NOW() END),
     snoozed_until    = CASE WHEN $2 = 'Snoozed' THEN $3::timestamptz ELSE NULL END,
     updated_at       = NOW()
-WHERE uuid = $1;
+WHERE uuid = $1
+  AND ($4::timestamptz IS NULL OR (
+      updated_at = $4
+      AND assigned_user_id IS NOT DISTINCT FROM $5::bigint
+      AND assigned_team_id IS NOT DISTINCT FROM $6::int
+      AND status_id IN (SELECT id FROM conversation_statuses WHERE category = 'open')
+  ));
+
+-- name: get-bulk-open-conversation-candidates
+SELECT conversations.uuid, conversations.updated_at, conversations.assigned_user_id, conversations.assigned_team_id
+FROM conversations
+JOIN users ON contact_id = users.id
+JOIN inboxes ON inbox_id = inboxes.id
+JOIN conversation_statuses ON status_id = conversation_statuses.id
+WHERE conversation_statuses.category = 'open' %s
 
 -- name: get-user-active-conversations-count
 SELECT COUNT(*) FROM conversations WHERE status_id IN (SELECT id FROM conversation_statuses WHERE category = 'open') AND assigned_user_id = $1;

@@ -101,7 +101,7 @@ func TestAIHandoffAssignment(t *testing.T) {
 	}
 	changeStatus := func(t *testing.T, uuid, status string) {
 		t.Helper()
-		if _, err := m.q.UpdateConversationStatus.Exec(uuid, status, time.Now().Add(time.Hour)); err != nil {
+		if _, err := m.q.UpdateConversationStatus.Exec(uuid, status, time.Now().Add(time.Hour), nil, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

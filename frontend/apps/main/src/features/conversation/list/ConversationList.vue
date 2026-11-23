@@ -1,7 +1,7 @@
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- Header -->
-    <div
+    <header
       class="shrink-0 items-center px-3"
       :class="duo
         ? 'grid grid-cols-[1fr_auto] gap-2 pb-2 pt-3'
@@ -15,17 +15,22 @@
         class="ui-heading min-w-0 truncate"
         :class="{ 'col-span-2 row-start-2 text-2xl font-bold': duo }"
         :title="title"
+        tabindex="-1"
       >
         {{ title }}
       </h1>
-      <div v-if="duo" class="col-start-2 row-start-1 flex items-center gap-2">
-        <Button variant="outline" size="icon" class="size-11 rounded-full" as-child>
+      <div
+        v-if="duo || canUpdateStatus"
+        class="flex shrink-0 items-center"
+        :class="duo ? 'col-start-2 row-start-1 gap-2' : 'ml-auto'"
+      >
+        <Button v-if="duo" variant="outline" size="icon" class="size-11 rounded-full" as-child>
           <router-link :to="{ name: 'search' }" :aria-label="t('globals.terms.search')">
             <Search class="size-4" aria-hidden="true" />
           </router-link>
         </Button>
         <Button
-          v-if="userStore.can(permissions.CONVERSATIONS_WRITE)"
+          v-if="duo && userStore.can(permissions.CONVERSATIONS_WRITE)"
           type="button"
           variant="outline"
           size="icon"
@@ -35,8 +40,9 @@
         >
           <Plus class="size-4" aria-hidden="true" />
         </Button>
+        <InboxBulkStatusMenu v-if="canUpdateStatus" :scope="bulkStatusScope" :inbox-title="title" :duo="duo" />
       </div>
-    </div>
+    </header>
 
     <!-- Bulk Action Toolbar (when items selected) -->
     <ConversationBulkActionToolbar v-if="hasSelection && canBulkAct" />
@@ -205,11 +211,13 @@ import { useUserStore } from '@main/stores/user'
 import { useEmitter } from '@main/composables/useEmitter'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { permissions } from '@main/constants/permissions'
+import { CONVERSATION_LIST_TYPE } from '@main/constants/conversation'
 import { useBulkActionPermissions } from '@/composables/useBulkActionPermissions'
 import EmptyList from '@/features/conversation/list/ConversationEmptyList.vue'
 import ConversationBulkActionToolbar from '@/features/conversation/list/ConversationBulkActionToolbar.vue'
 import ConversationListItem from '@/features/conversation/list/ConversationListItem.vue'
 import ConversationListItemSkeleton from '@/features/conversation/list/ConversationListItemSkeleton.vue'
+import InboxBulkStatusMenu from '@/features/conversation/list/InboxBulkStatusMenu.vue'
 
 const props = defineProps({ duo: Boolean })
 
@@ -217,7 +225,7 @@ const conversationStore = useConversationStore()
 const teamStore = useTeamStore()
 const userStore = useUserStore()
 const emitter = useEmitter()
-const { canBulkAct } = useBulkActionPermissions()
+const { canBulkAct, canUpdateStatus } = useBulkActionPermissions()
 const route = useRoute()
 const { t } = useI18n()
 const selectedUUID = computed(() => props.duo ? route.params.uuid : conversationStore.current?.uuid)
@@ -240,6 +248,22 @@ const title = computed(() => {
   const key = route.meta?.titleKey
   if (!key) return ''
   return t(key, route.meta?.titleCount || 1)
+})
+
+const bulkStatusScope = computed(() => {
+  const list = conversationStore.conversations
+  if (!list.initialized || list.errorMessage) return null
+  const { type, teamID, viewID } = route.params
+  const listType = viewID ? CONVERSATION_LIST_TYPE.VIEW : teamID ? CONVERSATION_LIST_TYPE.TEAM_UNASSIGNED : type
+  if (!listType || list.listType !== listType) return null
+  if (viewID && Number(viewID) !== Number(list.viewID)) return null
+  if (teamID && Number(teamID) !== Number(list.teamID)) return null
+
+  return {
+    list_type: listType,
+    list_id: Number(viewID || teamID || 0),
+    filters: viewID ? '' : JSON.stringify(list.listFilters)
+  }
 })
 
 const handleStatusChange = (status) => {

@@ -331,6 +331,8 @@ const updateConversationStatus = (uuid, data) =>
       'Content-Type': 'application/json'
     }
   })
+const updateInboxOpenConversationStatus = (data) =>
+  http.post('/api/v1/conversations/bulk-status', data, { timeout: data.preview ? 10000 : 120000 })
 const updateConversationPriority = (uuid, data) =>
   http.put(`/api/v1/conversations/${uuid}/priority`, data, {
     headers: {
@@ -743,6 +745,7 @@ export default {
   updateCurrentUser,
   updateAssignee,
   updateConversationStatus,
+  updateInboxOpenConversationStatus,
   updateConversationPriority,
   upsertTags,
   updateConversationCustomAttribute,
