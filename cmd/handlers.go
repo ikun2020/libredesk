@@ -601,8 +601,8 @@ func serveMainFrontendFile(r *fastglue.Request, name, contentType, cacheControl 
 func serveWidgetStaticFiles(r *fastglue.Request) error {
 	app := r.Context.(*App)
 
-	filePath := string(r.RequestCtx.Path())
-	finalPath := filepath.Join(widgetDir, strings.TrimPrefix(filePath, "/widget"))
+	filePath := strings.TrimPrefix(string(r.RequestCtx.Path()), "/widget")
+	finalPath := filepath.Join(widgetDir, filePath)
 
 	file, err := app.fs.Get(finalPath)
 	if err != nil {
@@ -616,6 +616,9 @@ func serveWidgetStaticFiles(r *fastglue.Request) error {
 		contentType = http.DetectContentType(body)
 	}
 	r.RequestCtx.Response.Header.Set("Content-Type", contentType)
+	if versionedFrontendAsset.MatchString(filePath) {
+		r.RequestCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 	r.RequestCtx.Response.SetBodyRaw(body)
 	return nil
 }

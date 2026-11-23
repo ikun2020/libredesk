@@ -147,6 +147,27 @@ test('Support Sync rejects exchanges without the strict server marker', async ()
   expect(parent.postMessage.mock.calls.some(([event]) => event.type === 'WIDGET_LOADED')).toBe(false)
 })
 
+test('Support Sync waits for history but becomes ready while the help center is still loading', async () => {
+  signedMode()
+  widget.config.help = { help_center_id: 1 }
+  api.exchangeJWTForSession.mockResolvedValue(signedResponse())
+  let finishHistory
+  let finishHelp
+  chat.fetchConversations.mockReturnValueOnce(new Promise(resolve => { finishHistory = resolve }))
+  help.load.mockReturnValueOnce(new Promise(resolve => { finishHelp = resolve }))
+
+  await message('SUPPORT_SYNC_AUTH', { jwt: 'signed.jwt' })
+  expect(parent.postMessage).not.toHaveBeenCalled()
+  expect(help.load).not.toHaveBeenCalled()
+
+  finishHistory(true)
+  await settle()
+  expect(help.load).toHaveBeenCalledOnce()
+  expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'WIDGET_LOADED' }), '*')
+  expect(parent.postMessage).toHaveBeenCalledWith({ type: 'SUPPORT_SYNC_RESULT', ok: true }, 'https://panel.example.test')
+  finishHelp()
+})
+
 test('Support Sync restores history and updates profile without exposing the session or clearing drafts', async () => {
   signedMode()
   api.exchangeJWTForSession.mockResolvedValue(signedResponse())

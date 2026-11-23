@@ -20,6 +20,10 @@ func TestFrontendAssetCacheControl(t *testing.T) {
 		"../frontend/public/images/logo.png:frontend/dist/main/assets/logo-f-8PC_5B.png",
 		"../frontend/public/sw.js:frontend/dist/main/images/inbox-f-8PC_5B.js",
 		"../frontend/public/sw.js:frontend/dist/main/sw.js",
+		"../frontend/apps/widget/index.html:frontend/dist/widget/index.html",
+		"../frontend/public/sw.js:frontend/dist/widget/assets/index-f-8PC_5B.js",
+		"../static/public/static/fonts.css:frontend/dist/widget/assets/index-DvIVWM_S.css",
+		"../frontend/public/sw.js:frontend/dist/widget/assets/loader.js",
 		"../static/widget.js:static/widget.js",
 	)
 	if err != nil {
@@ -44,7 +48,12 @@ func TestFrontendAssetCacheControl(t *testing.T) {
 		{"/images/inbox-f-8PC_5B.js", serveFrontendStaticFiles, "", fasthttp.StatusOK},
 		{"/assets/missing-ABCD1234.js", serveFrontendStaticFiles, "", fasthttp.StatusNotFound},
 		{"/", serveIndexPage, "no-store, no-cache, must-revalidate, post-check=0, pre-check=0", fasthttp.StatusOK},
+		{"/widget", serveWidgetIndexPage, "no-store, no-cache, must-revalidate, post-check=0, pre-check=0", fasthttp.StatusOK},
 		{"/widget.js", serveWidgetJS, "no-store, no-cache, must-revalidate, max-age=0", fasthttp.StatusOK},
+		{"/widget/assets/index-f-8PC_5B.js", serveWidgetStaticFiles, longCache, fasthttp.StatusOK},
+		{"/widget/assets/index-DvIVWM_S.css", serveWidgetStaticFiles, longCache, fasthttp.StatusOK},
+		{"/widget/assets/loader.js", serveWidgetStaticFiles, "", fasthttp.StatusOK},
+		{"/widget/assets/missing-ABCD1234.js", serveWidgetStaticFiles, "", fasthttp.StatusNotFound},
 		{"/sw.js", serveServiceWorker, "no-cache", fasthttp.StatusOK},
 	} {
 		t.Run(tc.path, func(t *testing.T) {

@@ -74,8 +74,7 @@ onMounted(() => {
   window.parent.postMessage({ type: 'VUE_APP_READY', visitorProfileProtocol: 1, supportSyncIdentityProtocol: 1 }, '*')
 })
 
-const signalWidgetLoaded = async () => {
-  if (widgetStore.config.help?.help_center_id) await help.load()
+const signalWidgetLoaded = () => {
   window.parent.postMessage(
     {
       type: 'WIDGET_LOADED',
@@ -84,6 +83,7 @@ const signalWidgetLoaded = async () => {
     },
     '*'
   )
+  if (widgetStore.config.help?.help_center_id) void help.load()
 }
 
 const fetchInitialConversations = async () => {
@@ -165,7 +165,7 @@ const exchangeSupportSyncIdentity = async (message, parentOrigin) => {
     if (!refresh) {
       if (!await fetchInitialConversations()) throw new Error('Support Sync history unavailable')
       if (request !== identityRequest) return
-      await signalWidgetLoaded()
+      signalWidgetLoaded()
     }
     if (request === identityRequest) window.parent.postMessage({ type: 'SUPPORT_SYNC_RESULT', ok: true }, parentOrigin)
   } catch {
