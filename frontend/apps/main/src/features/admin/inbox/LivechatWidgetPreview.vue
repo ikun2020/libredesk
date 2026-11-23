@@ -530,7 +530,7 @@ import HelpCollectionList from '@shared-ui/components/HelpCollectionList.vue'
 import { hexToHSL, getContrastingHSL } from '@shared-ui/utils/color'
 import { renderTemplate } from '@shared-ui/utils/string'
 
-const DEFAULT_LAUNCHER_LOGO = '/static/public/launcher-logo.png'
+const DEFAULT_LAUNCHER_LOGO = '/static/public/launcher-logo.jpg'
 const HEX_COLOR = /^#([0-9a-f]{6}|[0-9a-f]{3})$/i
 const LAUNCHER_SIZE = 52
 const DEFAULT_LAUNCHER_ICON_SCALE = 100

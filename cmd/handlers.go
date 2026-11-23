@@ -541,6 +541,9 @@ func serveStaticFiles(r *fastglue.Request) error {
 	}
 	r.RequestCtx.Response.Header.Set("Content-Type", contentType)
 	r.RequestCtx.Response.Header.Set("Cache-Control", "public, max-age=86400")
+	if filePath == defaultLauncherLogoPath {
+		r.RequestCtx.Response.Header.Set("Access-Control-Allow-Origin", "*")
+	}
 	r.RequestCtx.Response.SetBodyRaw(body)
 	return nil
 }

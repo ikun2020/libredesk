@@ -48,6 +48,7 @@ const (
 	maxPhoneCountryCodeLength       = 10
 	fieldTypePhone                  = "phone"
 	phoneCountryCodeSuffix          = "_country_code"
+	defaultLauncherLogoPath         = "/static/public/launcher-logo.jpg"
 )
 
 var widgetVisitorProbeKeyword = regexp.MustCompile(`(?i)probe`)
@@ -1497,6 +1498,9 @@ func canReply(r *fastglue.Request, conversation cmodels.Conversation) error {
 }
 
 func launcherBranding(b livechat.Branding) map[string]any {
+	if b.Launcher.LogoURL == "" {
+		b.Launcher.LogoURL = defaultLauncherLogoPath
+	}
 	return map[string]any{
 		"colors":   b.Colors,
 		"launcher": b.Launcher,

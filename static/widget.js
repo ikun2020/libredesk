@@ -9,7 +9,7 @@
         return;
     }
     window.__libredeskWidgetLoaded = true;
-    const DEFAULT_LAUNCHER_LOGO_PATH = '/static/public/launcher-logo.png';
+    const DEFAULT_LAUNCHER_LOGO_PATH = '/static/public/launcher-logo.jpg';
 
     class Libredesk {
         constructor(config = {}) {
@@ -228,8 +228,6 @@
         }
 
         createElements () {
-            const branding = this.branding();
-
             this.toggleButton = document.createElement('button');
             this.toggleButton.type = 'button';
             this.toggleButton.style.cssText = `
@@ -265,7 +263,7 @@
 
             this.defaultIcon = document.createElement('img');
             this.defaultIcon.alt = '';
-            this.defaultIcon.src = branding.launcher?.logo_url || (this.config.baseURL + DEFAULT_LAUNCHER_LOGO_PATH);
+            this.defaultIcon.src = this.launcherLogoURL();
             this.defaultIcon.style.transition = iconTransition;
             this.styleLauncherIcon();
             this.iconContainer.appendChild(this.defaultIcon);
@@ -398,11 +396,18 @@
             return branding.launcher?.color || branding.colors?.primary || '#000000';
         }
 
+        launcherLogoURL () {
+            const logoURL = this.branding().launcher?.logo_url;
+            if (!logoURL || logoURL === DEFAULT_LAUNCHER_LOGO_PATH) {
+                return this.config.baseURL.replace(/\/$/, '') + DEFAULT_LAUNCHER_LOGO_PATH;
+            }
+            return logoURL;
+        }
+
         applyLauncherTheme () {
             if (!this.toggleButton) return;
-            const branding = this.branding();
             this.toggleButton.style.backgroundColor = this.launcherColor();
-            this.defaultIcon.src = branding.launcher?.logo_url || (this.config.baseURL + DEFAULT_LAUNCHER_LOGO_PATH);
+            this.defaultIcon.src = this.launcherLogoURL();
             this.styleLauncherIcon();
             const path = this.arrowIcon.querySelector('path');
             if (path) path.setAttribute('stroke', this.contrastColor(this.launcherColor()));
