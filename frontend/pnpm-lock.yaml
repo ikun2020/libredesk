@@ -119,6 +119,9 @@ importers:
       lettersanitizer:
         specifier: ^1.0.7
         version: 1.0.9
+      linkifyjs:
+        specifier: ^4.4.0
+        version: 4.4.0
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0

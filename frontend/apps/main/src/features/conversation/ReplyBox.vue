@@ -382,7 +382,8 @@ const pendingToolApproval = ref(null)
 const pendingToolConversationUUID = ref('')
 const deferredStatus = ref(null)
 const mentions = ref([])
-const ReplyBoxContent = shallowRef(null)
+const replyContent = shallowRef(null)
+const ReplyBoxContent = computed(() => replyContent.value?.default)
 const replyContentLoadFailed = ref(false)
 let replyContentLoad
 
@@ -395,7 +396,7 @@ const loadReplyContent = () => {
   if (!replyContentLoad) {
     replyContentLoadFailed.value = false
     replyContentLoad = import('./ReplyBoxContent.vue')
-      .then(({ default: content }) => { ReplyBoxContent.value = content })
+      .then(content => { replyContent.value = content })
       .catch(() => { replyContentLoadFailed.value = true })
       .finally(() => { replyContentLoad = undefined })
   }
@@ -630,6 +631,7 @@ const processSend = async (
   // Add pending message to cache for instant display.
   if (hasContent) {
     const savedContent = htmlContent.value
+    const outgoingContent = isPrivate ? savedContent : replyContent.value?.linkifyAgentReply(savedContent) ?? savedContent
     const author = {
       id: userStore.userID,
       first_name: userStore.firstName,
@@ -668,8 +670,8 @@ const processSend = async (
       !isPrivate && conversationStore.current.inbox_channel === WHATSAPP_CHANNEL
     const parts =
       isWhatsAppReply && mediaFiles.value.length
-        ? buildWhatsAppReplyParts(savedContent, mediaFiles.value)
-        : [{ content: savedContent, attachments: mediaFiles.value }]
+        ? buildWhatsAppReplyParts(outgoingContent, mediaFiles.value)
+        : [{ content: outgoingContent, attachments: mediaFiles.value }]
 
     tempUUIDs = parts.map((part, i) =>
       conversationStore.addPendingMessage(

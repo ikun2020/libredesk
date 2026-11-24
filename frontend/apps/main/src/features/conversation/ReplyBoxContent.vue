@@ -248,6 +248,10 @@
   </div>
 </template>
 
+<script>
+export { linkifyAgentReply } from './linkifyAgentReply'
+</script>
+
 <script setup>
 const RECIPIENT_ROW_CLASS = 'col-span-2 grid grid-cols-subgrid items-center gap-x-2'
 const RECIPIENT_LABEL_CLASS = 'whitespace-nowrap text-right text-sm text-muted-foreground'
