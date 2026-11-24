@@ -13,6 +13,7 @@
         >
           <template v-if="isImage">
             <img
+              ref="thumbnailEl"
               :src="
                 thumbFailed
                   ? attachment.url
@@ -87,6 +88,7 @@ const emit = defineEmits(['preview'])
 
 const showAudio = ref(false)
 const thumbFailed = ref(false)
+const thumbnailEl = ref(null)
 
 watch(
   () => props.attachment.url,
@@ -130,7 +132,9 @@ const iconColor = computed(() => {
 
 const onClick = () => {
   if (isImage.value) {
-    emit('preview', props.attachment)
+    const image = thumbnailEl.value
+    const previewUrl = image?.complete && image.naturalWidth > 0 ? image.currentSrc || image.src : ''
+    emit('preview', props.attachment, previewUrl)
   } else if (isAudio.value) {
     showAudio.value = true
   } else {

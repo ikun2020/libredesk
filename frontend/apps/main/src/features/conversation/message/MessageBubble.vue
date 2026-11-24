@@ -655,7 +655,11 @@ const refreshInlineImages = () => {
     return
   }
   inlineImages.value = Array.from(root.querySelectorAll('img'))
-    .map((el) => ({ url: el.getAttribute('src'), name: el.getAttribute('alt') || '' }))
+    .map(el => ({
+      url: el.getAttribute('src'),
+      name: el.getAttribute('alt') || '',
+      previewUrl: el.complete && el.naturalWidth > 0 ? el.currentSrc || el.src : ''
+    }))
     .filter((img) => img.url)
 }
 
