@@ -255,7 +255,7 @@ const RECIPIENT_INPUT_CLASS =
   'min-w-0 flex-1 border-input bg-card px-2 py-2 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring'
 const RECIPIENT_TOGGLE_CLASS = 'shrink-0 px-2 text-muted-foreground'
 
-import { ref, computed, nextTick, watch, useId } from 'vue'
+import { ref, computed, nextTick, onMounted, watch, useId } from 'vue'
 import { useDebounceFn, useMediaQuery } from '@vueuse/core'
 import { EMITTER_EVENTS } from '@main/constants/emitterEvents.js'
 import { MACRO_CONTEXT } from '@main/constants/conversation'
@@ -425,6 +425,12 @@ const insertContent = ref(null)
 const editorRef = ref(null)
 const ccInputRef = ref(null)
 const bccInputRef = ref(null)
+
+// An existing draft can finish loading before the editor is mounted.
+onMounted(() => {
+  textContent.value = editorRef.value.getText()
+  if (messageType.value === 'private_note') mentions.value = editorRef.value.extractMentions()
+})
 
 const showRecipientField = async (field) => {
   if (field === 'cc') showCc.value = true

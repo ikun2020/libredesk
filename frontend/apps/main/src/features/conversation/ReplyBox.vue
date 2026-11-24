@@ -77,8 +77,9 @@
         @escapeKeyDown="isEditorFullscreen = false"
         :hide-close-button="true"
       >
-        <ReplyBoxContent
-          v-if="isEditorFullscreen"
+        <component
+          :is="ReplyBoxContent"
+          v-if="isEditorFullscreen && ReplyBoxContent"
           ref="fullscreenContentRef"
           :isFullscreen="true"
           :isSending="isSending"
@@ -146,7 +147,9 @@
       :class="{ '!bg-private': messageType === 'private_note', 'ai-generating': isGenerating }"
       v-if="!isCollapsed && !isEditorFullscreen"
     >
-      <ReplyBoxContent
+      <component
+        :is="ReplyBoxContent"
+        v-if="ReplyBoxContent"
         ref="replyBoxContentRef"
         :isFullscreen="false"
         :isSending="isSending"
@@ -178,12 +181,23 @@
         :canSendPrivateNote="canSendPrivateNote"
         @generateReply="handleGenerateReply"
       />
+      <Button
+        v-else
+        type="button"
+        variant="ghost"
+        class="h-32 w-full items-start justify-start px-2 py-3 font-normal text-muted-foreground"
+        :aria-busy="!replyContentLoadFailed"
+        @click="focusFromPalette"
+      >
+        {{ $t(replyContentLoadFailed ? 'globals.terms.tryAgain' : 'globals.terms.loading') }}
+      </Button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, computed, toRaw, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, watch, computed, toRaw, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useMediaQuery, useStorage } from '@vueuse/core'
 import { handleHTTPError } from '@shared-ui/utils/http.js'
 import { getTextFromHTML } from '@shared-ui/utils/string'
@@ -215,12 +229,12 @@ import { useIsComposerCramped } from '@main/composables/useIsComposerCramped'
 import { useEmitter } from '@main/composables/useEmitter'
 import { useFileUpload } from '@main/composables/useFileUpload'
 import { hasInlineImage, hasPendingInlineUpload } from '@main/composables/useInlineImageUpload'
-import ReplyBoxContent from '@/features/conversation/ReplyBoxContent.vue'
 import { UserTypeAgent } from '@/constants/user'
 import { permissions as perms } from '@main/constants/permissions.js'
 
 const { t } = useI18n()
 const conversationStore = useConversationStore()
+const route = useRoute()
 const notificationStore = useNotificationStore()
 const inboxStore = useInboxStore()
 const emitter = useEmitter()
@@ -368,6 +382,39 @@ const pendingToolApproval = ref(null)
 const pendingToolConversationUUID = ref('')
 const deferredStatus = ref(null)
 const mentions = ref([])
+const ReplyBoxContent = shallowRef(null)
+const replyContentLoadFailed = ref(false)
+let replyContentLoad
+
+const isReplyConversationCurrent = computed(() =>
+  !!currentConversationUUID.value && route.params.uuid === currentConversationUUID.value
+)
+
+const loadReplyContent = () => {
+  if (ReplyBoxContent.value) return
+  if (!replyContentLoad) {
+    replyContentLoadFailed.value = false
+    replyContentLoad = import('./ReplyBoxContent.vue')
+      .then(({ default: content }) => { ReplyBoxContent.value = content })
+      .catch(() => { replyContentLoadFailed.value = true })
+      .finally(() => { replyContentLoad = undefined })
+  }
+  return replyContentLoad
+}
+
+watch(
+  () => isReplyConversationCurrent.value && !isMinimized.value && !conversationStore.messages.loading &&
+    (!conversationStore.messages.fetching || conversationStore.conversationMessages.length > 0),
+  (ready, _, onCleanup) => {
+    if (!ready || ReplyBoxContent.value) return
+    // Let the browser paint the conversation before downloading its editor.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(loadReplyContent)
+    })
+    onCleanup(() => cancelAnimationFrame(frame))
+  },
+  { immediate: true, flush: 'post' }
+)
 
 watch(currentConversationUUID, (uuid) => {
   if (pendingToolApproval.value && pendingToolConversationUUID.value !== uuid) {
@@ -446,6 +493,7 @@ const handleCopilotInsertReply = (html) => {
   if (messageType.value === 'private_note') messageType.value = 'reply'
   isMinimized.value = false
   htmlContent.value = html
+  loadReplyContent()
 }
 
 const setMessageTypeFromPalette = (type) => {
@@ -453,20 +501,25 @@ const setMessageTypeFromPalette = (type) => {
   messageType.value = type
 }
 
-const focusFromPalette = () => {
-  if (isMinimized.value) {
-    isMinimized.value = false
-    nextTick(() => replyBoxContentRef.value?.focus())
+const focusFromPalette = async () => {
+  if (!isReplyConversationCurrent.value) return
+  const uuid = currentConversationUUID.value
+  isMinimized.value = false
+  const content = activeContentRef()
+  if (content) {
+    content.focus()
     return
   }
-  activeContentRef()?.focus()
+  await loadReplyContent()
+  await nextTick()
+  if (isReplyConversationCurrent.value && currentConversationUUID.value === uuid) activeContentRef()?.focus()
 }
 
 const toggleMinimize = () => {
   // Unmounting the editor mid AI rewrite drops the result and leaves isGenerating stuck.
   if (isEditorFullscreen.value || isGenerating.value) return
   isMinimized.value = !isMinimized.value
-  if (!isMinimized.value) nextTick(() => replyBoxContentRef.value?.focus())
+  if (!isMinimized.value) focusFromPalette()
 }
 
 onMounted(() => {
@@ -497,6 +550,7 @@ const isCollapsed = computed(() => isMinimized.value)
 
 const expandComposer = () => {
   isMinimized.value = false
+  loadReplyContent()
 }
 
 const attachmentCount = computed(() => mediaFiles.value.length + uploadingFiles.value.length)

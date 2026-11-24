@@ -23,10 +23,14 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key) => key }) }))
 vi.mock('@main/api', () => ({ default: { searchMacros, getMacro } }))
 vi.mock('@main/components/editor/ConversationEditor.vue', () => ({
   default: {
-    props: ['sendOnEnter', 'insertContent'],
+    props: ['sendOnEnter', 'insertContent', 'htmlContent'],
     emits: ['send'],
     setup(editorProps, { expose, emit }) {
-      expose({ focus: editorFocus })
+      expose({
+        focus: editorFocus,
+        getText: () => editorProps.htmlContent.replace(/<[^>]*>/g, ''),
+        extractMentions: () => [{ id: 1, type: 'agent' }]
+      })
       sendFromEditor = () => emit('send')
       return () => h('div', {
         contenteditable: true,
@@ -59,7 +63,7 @@ const settle = async () => {
   await nextTick()
 }
 
-const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
+const mount = async ({ touch = false, isDraftLoading = false, htmlContent = '', messageType = 'reply' } = {}) => {
   vi.stubGlobal('matchMedia', vi.fn((query) => ({
     matches: touch && query.includes('(pointer: coarse)'),
     media: query,
@@ -69,13 +73,13 @@ const mount = async ({ touch = false, isDraftLoading = false } = {}) => {
   props = reactive({
     isSending: false,
     uploadingFiles: [],
-    htmlContent: '',
+    htmlContent,
     textContent: '',
     mentions: [],
     canSendReply: true,
     canSendPrivateNote: true,
     isDraftLoading,
-    messageType: 'reply'
+    messageType
   })
   host = document.createElement('div')
   document.body.append(host)
@@ -157,6 +161,15 @@ describe('reply editor focus', () => {
 })
 
 describe('reply editor sending', () => {
+  it('restores a private note draft that was already loaded before mounting the editor', async () => {
+    await mount({ htmlContent: '<p>Draft note</p>', messageType: 'private_note' })
+    expect(props.textContent).toBe('Draft note')
+    expect(props.mentions).toEqual([{ id: 1, type: 'agent' }])
+    sendFromEditor()
+    await settle()
+    expect(onSend).toHaveBeenCalledOnce()
+  })
+
   it.each([false, true])('enables Enter sending only on desktop (touch: %s)', async (touch) => {
     await mount({ touch })
     expect(host.querySelector('[contenteditable]').getAttribute('data-send-on-enter')).toBe(String(!touch))

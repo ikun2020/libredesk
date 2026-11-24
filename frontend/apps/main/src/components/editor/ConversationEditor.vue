@@ -115,7 +115,8 @@ watch(
   (disabled) => editor.value?.setEditable(!disabled, false)
 )
 
-defineExpose({ focus, extractMentions })
+const getText = () => editor.value?.getText() ?? ''
+defineExpose({ focus, extractMentions, getText })
 </script>
 
 <style lang="scss" src="./editorStyles.scss"></style>

@@ -183,7 +183,7 @@ const notesCache = new Map()
 </script>
 
 <script setup>
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Button } from '@shared-ui/components/ui/button'
 import { Card, CardHeader, CardContent } from '@shared-ui/components/ui/card'
@@ -206,7 +206,6 @@ import {
   AlertDialogTitle
 } from '@shared-ui/components/ui/alert-dialog'
 import { PlusIcon, MoreVerticalIcon, TrashIcon, ClockIcon } from 'lucide-vue-next'
-import Editor from '@main/components/editor/ConversationEditor.vue'
 import { useI18n } from 'vue-i18n'
 import { useEmitter } from '@main/composables/useEmitter'
 import { EMITTER_EVENTS, CONTACT_ACTIONS } from '@main/constants/emitterEvents.js'
@@ -215,6 +214,8 @@ import { getInitials } from '@shared-ui/utils/string'
 import { useUserStore } from '@main/stores/user'
 import { Letter } from 'vue-letter'
 import api from '@main/api'
+
+const Editor = defineAsyncComponent(() => import('@main/components/editor/ConversationEditor.vue'))
 
 const props = defineProps({ contactId: Number, compact: { type: Boolean, default: false } })
 

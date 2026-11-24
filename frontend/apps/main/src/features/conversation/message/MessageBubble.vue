@@ -285,10 +285,7 @@
   </AlertDialog>
 
   <Dialog :open="editOpen" @update:open="onEditOpenChange">
-    <DialogContent
-      :hide-close-button="mutationPending"
-      @open-auto-focus.prevent
-    >
+    <DialogContent :hide-close-button="mutationPending">
       <DialogHeader>
         <DialogTitle>{{ t('conversation.editMessage') }}</DialogTitle>
         <DialogDescription class="sr-only">{{ t('globals.terms.typeMessage') }}</DialogDescription>
@@ -316,6 +313,26 @@
   </Dialog>
 </template>
 
+<script>
+import { defineAsyncComponent, h } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Spinner } from '@shared-ui/components/ui/spinner'
+
+const ConversationEditor = defineAsyncComponent({
+  loader: async () => (await import('@main/components/editor/ConversationEditor.vue')).default,
+  loadingComponent: {
+    render: () => h(Spinner, { class: 'min-h-24', size: 'sm', absolute: false })
+  },
+  errorComponent: {
+    setup () {
+      const { t } = useI18n()
+      return () => h('p', { class: 'min-h-24 text-sm text-muted-foreground', role: 'alert' },
+        t('globals.messages.somethingWentWrong'))
+    }
+  }
+})
+</script>
+
 <script setup>
 const AUTHOR_LINK_CLASS = 'cursor-pointer text-muted-foreground text-sm font-medium hover:underline hover:text-foreground transition-colors duration-200'
 
@@ -323,7 +340,6 @@ import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useConversationStore } from '@main/stores/conversation'
 import { useUserStore } from '@main/stores/user'
-import { useI18n } from 'vue-i18n'
 import {
   Lock,
   Mail,
@@ -355,14 +371,12 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@shared-ui/components/ui/dialog'
 import { Button } from '@shared-ui/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@shared-ui/components/ui/tooltip'
-import { Spinner } from '@shared-ui/components/ui/spinner'
 import { useWorkspaceDateTime } from '@main/composables/useWorkspaceDateTime'
 import { Avatar, AvatarFallback, AvatarImage } from '@shared-ui/components/ui/avatar'
 import { Letter } from 'vue-letter'
 import { allowedCssProperties } from 'lettersanitizer'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 import BubbleAttachmentPreview from '@main/features/conversation/message/attachment/BubbleAttachmentPreview.vue'
-import ConversationEditor from '@main/components/editor/ConversationEditor.vue'
 import MessageEnvelope from './MessageEnvelope.vue'
 import CSATResponseDisplay from './CSATResponseDisplay.vue'
 import api from '@main/api'
