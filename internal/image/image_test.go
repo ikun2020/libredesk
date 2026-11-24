@@ -105,3 +105,58 @@ func TestCreateThumbInvalid(t *testing.T) {
 		t.Fatal("expected error for invalid data")
 	}
 }
+
+func TestCreatePreviewFitsOpaqueAndTransparentImages(t *testing.T) {
+	for _, transparent := range []bool{false, true} {
+		t.Run(map[bool]string{false: "opaque jpeg", true: "transparent png"}[transparent], func(t *testing.T) {
+			img := image.NewNRGBA(image.Rect(0, 0, 2000, 1000))
+			for i := 0; i < len(img.Pix); i += 4 {
+				img.Pix[i] = 180
+				if !transparent || i/4%2 == 0 {
+					img.Pix[i+3] = 255
+				}
+			}
+			var input bytes.Buffer
+			if err := png.Encode(&input, img); err != nil {
+				t.Fatal(err)
+			}
+			preview, err := CreatePreview(bytes.NewReader(input.Bytes()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, format, err := image.DecodeConfig(bytes.NewReader(preview.Data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Width != 1600 || cfg.Height != 800 {
+				t.Fatalf("preview dimensions = %dx%d, want 1600x800", cfg.Width, cfg.Height)
+			}
+			want := "jpeg"
+			if transparent {
+				want = "png"
+			}
+			if format != want || preview.ContentType != "image/"+want {
+				t.Fatalf("preview format = %s (%s), want %s", format, preview.ContentType, want)
+			}
+		})
+	}
+}
+
+func TestCreatePreviewRejectsOversizedOrAnimatedImages(t *testing.T) {
+	sources := [][]byte{
+		{'G', 'I', 'F', '8', '9', 'a', 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00},
+	}
+	// Animated PNG advertises acTL before the first IDAT, even when a decoder only sees the first frame.
+	still := encodePNG(t, 64, 64)
+	pngBytes := make([]byte, still.Len())
+	if _, err := still.Read(pngBytes); err != nil {
+		t.Fatal(err)
+	}
+	animationControl := []byte{0, 0, 0, 8, 'a', 'c', 'T', 'L', 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0}
+	sources = append(sources, bytes.Join([][]byte{pngBytes[:33], animationControl, pngBytes[33:]}, nil))
+	for _, source := range sources {
+		if _, err := CreatePreview(bytes.NewReader(source)); err == nil {
+			t.Fatal("expected preview rejection")
+		}
+	}
+}

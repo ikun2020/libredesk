@@ -110,6 +110,7 @@ type App struct {
 	lo                 *logf.Logger
 	oidc               *oidc.Manager
 	media              *media.Manager
+	mediaPreviews      mediaPreviewCache
 	setting            *setting.Manager
 	role               *role.Manager
 	user               *user.Manager

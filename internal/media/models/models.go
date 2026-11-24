@@ -73,6 +73,18 @@ func NormalizeContentType(contentType string) string {
 	return mediaType
 }
 
+// CanPreviewImage limits compression to large, browser-native raster images.
+func CanPreviewImage(contentType string, size int) bool {
+	if size < 256<<10 || size > 20<<20 {
+		return false
+	}
+	switch NormalizeContentType(contentType) {
+	case "image/jpeg", "image/png", "image/webp":
+		return true
+	}
+	return false
+}
+
 // ContentDisposition returns inline for images, video and PDF. XML types such as SVG can run scripts and are always attachments.
 func ContentDisposition(contentType string) string {
 	contentType = NormalizeContentType(contentType)

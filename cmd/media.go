@@ -265,6 +265,22 @@ func serveMediaFile(r *fastglue.Request, app *App, uuid string, media *mmodels.M
 		// Older rows hold content types exactly as the client sent them.
 		contentType := mmodels.NormalizeContentType(media.ContentType)
 		disposition := mmodels.ContentDisposition(contentType)
+		path := filepath.Join(ko.String("upload.fs.upload_path"), uuid)
+		cacheControl := fmt.Sprintf("%s, max-age=%d, immutable", cacheVisibility(media.Private), int(mediaCacheTTL.Seconds()))
+		if !forceDownload && !strings.HasPrefix(uuid, image.ThumbPrefix) &&
+			string(r.RequestCtx.QueryArgs().Peek("preview")) == "1" && mmodels.CanPreviewImage(contentType, media.Size) {
+			if preview := app.mediaPreviews.load(path, contentType); len(preview.Data) > 0 {
+				h := &r.RequestCtx.Response.Header
+				h.Set("Content-Type", preview.ContentType)
+				h.Set("Content-Disposition", mmodels.DispositionInline)
+				h.Set("X-Content-Type-Options", "nosniff")
+				h.Set("Cache-Control", cacheControl)
+				r.RequestCtx.Response.SetBodyRaw(preview.Data)
+				return nil
+			}
+			// A fallback can be temporary when the preview worker is busy.
+			cacheControl = cacheVisibility(media.Private) + ", max-age=60"
+		}
 		if forceDownload {
 			disposition = mmodels.DispositionAttachment
 		}
@@ -277,9 +293,9 @@ func serveMediaFile(r *fastglue.Request, app *App, uuid string, media *mmodels.M
 		if disposition == mmodels.DispositionAttachment {
 			r.RequestCtx.Response.Header.Set("Content-Security-Policy", "sandbox")
 		}
-		r.RequestCtx.Response.Header.Set("Cache-Control", fmt.Sprintf("%s, max-age=%d, immutable", cacheVisibility(media.Private), int(mediaCacheTTL.Seconds())))
+		r.RequestCtx.Response.Header.Set("Cache-Control", cacheControl)
 
-		fasthttp.ServeFile(r.RequestCtx, filepath.Join(ko.String("upload.fs.upload_path"), uuid))
+		fasthttp.ServeFile(r.RequestCtx, path)
 	case "s3":
 		url := app.media.GetURL(uuid, media.ContentType, media.Filename)
 		if forceDownload {

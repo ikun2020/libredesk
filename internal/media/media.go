@@ -293,6 +293,22 @@ func (m *Manager) GetThumbnailURL(uuid string) string {
 	return m.store.GetURL(image.ThumbPrefix+uuid, models.DispositionInline, "" /** fileName **/)
 }
 
+// GetPreviewURL adds an optional compressed rendition to a local media URL.
+// The local signature binds the UUID and expiration, so both URLs use the same signature.
+func (m *Manager) GetPreviewURL(originalURL, contentType string, size int) string {
+	if m.store.Name() != "fs" || !models.CanPreviewImage(contentType, size) {
+		return ""
+	}
+	u, err := url.Parse(originalURL)
+	if err != nil || u.Path == "" {
+		return ""
+	}
+	q := u.Query()
+	q.Set("preview", "1")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 // SignedURLValidator returns the store's signature validator if available.
 // Returns nil if the store doesn't support signed URL validation.
 func (m *Manager) SignedURLValidator() func(name, sig string, exp int64) bool {

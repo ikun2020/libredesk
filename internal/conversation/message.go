@@ -442,13 +442,18 @@ func (m *Manager) GetMessage(uuid string) (models.Message, error) {
 	return message, nil
 }
 
-// SignAttachmentURLs adds access URLs for the original image and its thumbnail.
+// SignAttachmentURLs adds the access URLs for each available rendition.
 func (m *Manager) SignAttachmentURLs(attachments attachment.Attachments) {
 	for i := range attachments {
-		attachments[i].URL = m.mediaStore.GetURL(attachments[i].UUID, attachments[i].ContentType, attachments[i].Name)
-		if strings.HasPrefix(attachments[i].ContentType, "image/") {
-			attachments[i].ThumbnailURL = m.mediaStore.GetThumbnailURL(attachments[i].UUID)
-		}
+		m.signAttachmentURLs(&attachments[i])
+	}
+}
+
+func (m *Manager) signAttachmentURLs(att *attachment.Attachment) {
+	att.URL = m.mediaStore.GetURL(att.UUID, att.ContentType, att.Name)
+	att.PreviewURL = m.mediaStore.GetPreviewURL(att.URL, att.ContentType, att.Size)
+	if strings.HasPrefix(att.ContentType, "image/") {
+		att.ThumbnailURL = m.mediaStore.GetThumbnailURL(att.UUID)
 	}
 }
 
@@ -1552,11 +1557,8 @@ func (m *Manager) fetchMessageAttachments(messageID int) (attachment.Attachments
 			Content:     blob,
 			Size:        media.Size,
 			Header:      attachment.MakeHeader(media.ContentType, contentID, media.Filename, "base64", media.Disposition.String),
-			URL:         m.mediaStore.GetURL(media.UUID, media.ContentType, media.Filename),
 		}
-		if strings.HasPrefix(media.ContentType, "image/") {
-			attachment.ThumbnailURL = m.mediaStore.GetThumbnailURL(media.UUID)
-		}
+		m.signAttachmentURLs(&attachment)
 		attachments = append(attachments, attachment)
 	}
 

@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" @load.capture="onImageLoad">
+    <div v-if="modelValue" ref="viewerHost" class="image-lightbox-host" @load.capture="onImageLoad">
       <VueEasyLightbox
         :key="attempt"
         :visible="viewerOpen"
@@ -10,10 +10,7 @@
         @hide="close"
         @on-index-change="onIndexChange"
         @on-error="onImageError"
-      >
-        <template #loading><span hidden /></template>
-        <template #onerror><span hidden /></template>
-      </VueEasyLightbox>
+      />
 
       <div v-if="viewerOpen && state !== 'ready'" class="image-lightbox-preview">
         <img
@@ -23,7 +20,7 @@
           :alt="currentImage?.name || ''"
           @error="failedPreviewUrl = $event.target.getAttribute('src')"
         />
-        <div v-if="state !== 'loading' || !hasLoadedOriginal" class="image-lightbox-status">
+        <div v-if="state !== 'loading' || !hasLoadedImage" class="image-lightbox-status">
           <span role="status">{{ $t(statusMessage) }}</span>
           <Button v-if="state !== 'loading'" size="sm" variant="secondary" @click="retry">
             {{ $t('globals.terms.tryAgain') }}
@@ -50,23 +47,35 @@ const emit = defineEmits(['update:modelValue'])
 
 const index = ref(0)
 const viewerOpen = ref(false)
+const viewerHost = ref(null)
 const attempt = ref(0)
 const state = ref('loading')
 const failedPreviewUrl = ref('')
+const useOriginalFor = ref('')
 // Keep this in the current gallery and match the full URL, including its signature.
-const loadedOriginals = reactive(new Set())
+const loadedImages = reactive(new Set())
 const currentImage = computed(() => props.images[index.value])
-const originalUrl = computed(() => currentImage.value?.url)
-const hasLoadedOriginal = computed(() => loadedOriginals.has(originalUrl.value))
-const previewUrl = computed(() => hasLoadedOriginal.value
-  ? originalUrl.value
+const chooseViewerUrl = image => image.url === useOriginalFor.value ? image.url : image.preview_url || image.url
+const viewerUrl = computed(() => currentImage.value && chooseViewerUrl(currentImage.value))
+const hasLoadedImage = computed(() => loadedImages.has(viewerUrl.value))
+const previewUrl = computed(() => hasLoadedImage.value
+  ? viewerUrl.value
   : currentImage.value?.previewUrl || currentImage.value?.thumbnail_url)
 const statusMessage = computed(() => ({
   loading: 'conversation.imagePreviewLoading',
   timeout: 'conversation.imagePreviewTimeout',
   error: 'conversation.imagePreviewError'
 })[state.value])
-const imgs = computed(() => props.images.map(img => ({ src: img.url, title: img.name || '' })))
+const imgs = computed(() => props.images.map(img => ({ src: chooseViewerUrl(img), title: img.name || '' })))
+
+const absoluteViewerUrl = computed(() => {
+  if (!viewerUrl.value) return ''
+  try {
+    return new URL(viewerUrl.value, document.baseURI).href
+  } catch {
+    return ''
+  }
+})
 
 function close() {
   emit('update:modelValue', false)
@@ -82,23 +91,31 @@ function step(delta) {
   index.value = (index.value + delta + total) % total
 }
 
-function onImageLoad(event) {
-  const image = event.target
-  // Wait for the visible image so the thumbnail stays in place during the handoff.
-  if (!viewerOpen.value || !image.classList?.contains('vel-img') ||
-      !image.naturalWidth || image.getAttribute('src') !== originalUrl.value) return
-  loadedOriginals.add(originalUrl.value)
+function isActiveViewerImage(image) {
+  return viewerOpen.value && image instanceof HTMLImageElement &&
+    image.src === absoluteViewerUrl.value && Boolean(image.closest('.vel-modal'))
+}
+
+function showLoadedImage(image) {
+  if (!isActiveViewerImage(image) || !image.naturalWidth) return
+  loadedImages.add(viewerUrl.value)
   state.value = 'ready'
 }
 
+function onImageLoad(event) {
+  // The viewer initially loads a hidden image. Its success is enough to end the wait.
+  showLoadedImage(event.target)
+}
+
 function onImageError(event) {
-  if (!viewerOpen.value || event.target?.getAttribute('src') !== originalUrl.value) return
-  loadedOriginals.delete(originalUrl.value)
+  if (!isActiveViewerImage(event.target)) return
+  loadedImages.delete(viewerUrl.value)
   state.value = 'error'
 }
 
 async function retry() {
   viewerOpen.value = false
+  if (currentImage.value?.preview_url) useOriginalFor.value = currentImage.value.url
   attempt.value++
   await nextTick()
   if (props.modelValue) viewerOpen.value = true
@@ -136,7 +153,7 @@ watch(() => props.modelValue, async (open, _, onCleanup) => {
   if (props.modelValue) viewerOpen.value = true
 }, { immediate: true })
 
-watch([viewerOpen, originalUrl], ([open, url], _, onCleanup) => {
+watch([viewerOpen, viewerUrl], ([open, url], _, onCleanup) => {
   if (!open) return
   failedPreviewUrl.value = ''
   state.value = url ? 'loading' : 'error'
@@ -145,6 +162,13 @@ watch([viewerOpen, originalUrl], ([open, url], _, onCleanup) => {
     if (state.value === 'loading') state.value = 'timeout'
   }, LOAD_TIMEOUT_MS)
   onCleanup(() => window.clearTimeout(timer))
+  // Cached images may already be complete when the viewer mounts or changes slides.
+  nextTick(() => {
+    if (viewerUrl.value !== url) return
+    for (const image of viewerHost.value?.querySelectorAll('.vel-modal img') || []) {
+      if (image.complete) showLoadedImage(image)
+    }
+  })
 }, { flush: 'sync' })
 </script>
 
@@ -158,6 +182,11 @@ watch([viewerOpen, originalUrl], ([open, url], _, onCleanup) => {
 </style>
 
 <style scoped>
+.image-lightbox-host :deep(.vel-loading),
+.image-lightbox-host :deep(.vel-on-error) {
+  display: none;
+}
+
 .image-lightbox-preview {
   position: fixed;
   inset: 4rem min(4rem, 12vw);

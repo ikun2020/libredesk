@@ -5,8 +5,10 @@ package image
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"image"
+	"image/png"
 	"io"
 
 	"github.com/disintegration/imaging"
@@ -23,8 +25,10 @@ const (
 	// maxDecodePixels bounds width*height read from the header, blocking a small file that declares huge dimensions. 25 MP is ~100 MB of RGBA per agent worker.
 	maxDecodePixels = 25_000_000
 	// AvatarMaxDim caps an avatar's longest edge. The largest render is the 128px `lg` variant, at up to 4x DPI.
-	AvatarMaxDim      = 512
-	avatarJPEGQuality = 85
+	AvatarMaxDim       = 512
+	avatarJPEGQuality  = 85
+	previewMaxDim      = 1600
+	previewJPEGQuality = 84
 )
 
 var (
@@ -87,6 +91,83 @@ func CreateThumb(thumbPxSize int, r io.ReadSeeker) (*bytes.Reader, error) {
 	}
 
 	return bytes.NewReader(out.Bytes()), nil
+}
+
+type Preview struct {
+	Data        []byte
+	ContentType string
+}
+
+// CreatePreview returns a smaller viewing rendition of a supported still image.
+func CreatePreview(r io.ReadSeeker) (Preview, error) {
+	cfg, format, err := image.DecodeConfig(r)
+	if err != nil {
+		return Preview{}, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxDecodePixels/cfg.Height {
+		return Preview{}, fmt.Errorf("invalid or too-large image dimensions %dx%d", cfg.Width, cfg.Height)
+	}
+	if !isStillPreviewFormat(r, format) {
+		return Preview{}, fmt.Errorf("unsupported preview image format %s", format)
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return Preview{}, err
+	}
+	img, err := imaging.Decode(r, imaging.AutoOrientation(true))
+	if err != nil {
+		return Preview{}, err
+	}
+	view := imaging.Fit(img, previewMaxDim, previewMaxDim, imaging.Lanczos)
+	var out bytes.Buffer
+	contentType := "image/jpeg"
+	if view.Opaque() {
+		err = imaging.Encode(&out, view, imaging.JPEG, imaging.JPEGQuality(previewJPEGQuality))
+	} else {
+		contentType = "image/png"
+		encoder := png.Encoder{CompressionLevel: png.BestSpeed}
+		err = encoder.Encode(&out, view)
+	}
+	if err != nil {
+		return Preview{}, err
+	}
+	return Preview{Data: out.Bytes(), ContentType: contentType}, nil
+}
+
+func isStillPreviewFormat(r io.ReadSeeker, format string) bool {
+	switch format {
+	case "jpeg":
+		return true
+	case "png":
+		if _, err := r.Seek(8, io.SeekStart); err != nil {
+			return false
+		}
+		var header [8]byte
+		// APNG must put acTL before IDAT. Bound the number of chunks to examine.
+		for range 256 {
+			if _, err := io.ReadFull(r, header[:]); err != nil {
+				return false
+			}
+			switch string(header[4:]) {
+			case "acTL":
+				return false
+			case "IDAT":
+				return true
+			}
+			if _, err := r.Seek(int64(binary.BigEndian.Uint32(header[:4]))+4, io.SeekCurrent); err != nil {
+				return false
+			}
+		}
+	case "webp":
+		if _, err := r.Seek(12, io.SeekStart); err != nil {
+			return false
+		}
+		var header [9]byte
+		if _, err := io.ReadFull(r, header[:]); err == nil {
+			// The first byte of a VP8X chunk contains its animation flag.
+			return string(header[:4]) != "VP8X" || header[8]&0x02 == 0
+		}
+	}
+	return false
 }
 
 // EncodeForLLM decodes an image, downscales its longest edge to at most llmMaxDim, re-encodes it as

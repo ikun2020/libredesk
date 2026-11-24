@@ -2,6 +2,7 @@ package media
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 
 	"github.com/abhinavxd/libredesk/internal/dbutil"
@@ -11,6 +12,35 @@ import (
 	"github.com/volatiletech/null/v9"
 	"github.com/zerodha/logf"
 )
+
+type previewTestStore struct {
+	Store
+	name string
+}
+
+func (s previewTestStore) Name() string { return s.name }
+
+func TestGetPreviewURLKeepsOriginalSignature(t *testing.T) {
+	const original = "https://support.example.com/uploads/0b7a3c1e-2f4d-4b8a-9c6e-1d2f3a4b5c6e?sig=a-b_c&exp=1795500000"
+	m := &Manager{store: previewTestStore{name: "fs"}}
+	got, err := url.Parse(m.GetPreviewURL(original, "image/jpeg", 1<<20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := url.Parse(original)
+	q := got.Query()
+	if got.Scheme != want.Scheme || got.Host != want.Host || got.Path != want.Path ||
+		q.Get("sig") != want.Query().Get("sig") || q.Get("exp") != want.Query().Get("exp") || q.Get("preview") != "1" {
+		t.Fatalf("preview URL does not preserve the signed attachment: %q", got)
+	}
+	if m.GetPreviewURL(original, "image/jpeg", 1024) != "" || m.GetPreviewURL(original, "image/gif", 1<<20) != "" {
+		t.Fatal("small images and GIFs must keep their original URL")
+	}
+	m.store = previewTestStore{name: "s3"}
+	if m.GetPreviewURL(original, "image/jpeg", 1<<20) != "" {
+		t.Fatal("S3 URLs must never be modified")
+	}
+}
 
 func TestDeletedMessageMediaUnavailable(t *testing.T) {
 	db := testutil.NewDB(t, "deleted_message_media")

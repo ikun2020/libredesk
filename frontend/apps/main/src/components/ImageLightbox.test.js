@@ -11,6 +11,7 @@ const images = [
 let app
 let host
 let open
+let gallery
 const preview = () => document.querySelector('.image-lightbox-preview img')
 const originalRequest = () => document.querySelector('.vel-modal > img')
 const status = () => document.querySelector('.image-lightbox-preview [role="status"]')?.textContent
@@ -33,12 +34,13 @@ async function finishOriginal() {
 beforeEach(() => {
   vi.useFakeTimers()
   open = ref(false)
+  gallery = ref(images)
   host = document.createElement('div')
   document.body.append(host)
   app = createApp({
     render: () => h(ImageLightbox, {
       modelValue: open.value,
-      images,
+      images: gallery.value,
       'onUpdate:modelValue': value => { open.value = value }
     })
   })
@@ -102,4 +104,30 @@ it('shows the selected thumbnail and gives the new image its own time limit', as
   expect(status()).toBe('conversation.imagePreviewLoading')
   await finishOriginal()
   expect(preview()).toBeNull()
+})
+
+it('accepts the preloader success without requiring the visible image to report a second load', async () => {
+  open.value = true
+  await paint()
+  const preloader = originalRequest()
+  Object.defineProperty(preloader, 'naturalWidth', { value: 900 })
+  preloader.dispatchEvent(new Event('load'))
+  await paint()
+  await vi.advanceTimersByTimeAsync(12_000)
+  expect(preview()).toBeNull()
+  expect(status()).toBeUndefined()
+  expect(document.querySelector('.vel-img')?.getAttribute('src')).toBe(images[0].url)
+})
+
+it('prefers the server preview and can retry using the signed original', async () => {
+  const previewUrl = `${images[0].url}&preview=1`
+  gallery.value = [{ ...images[0], preview_url: previewUrl }]
+  open.value = true
+  await paint()
+  expect(originalRequest().getAttribute('src')).toBe(previewUrl)
+  originalRequest().dispatchEvent(new Event('error'))
+  await nextTick()
+  document.querySelector('.image-lightbox-status button').click()
+  await paint()
+  expect(originalRequest().getAttribute('src')).toBe(images[0].url)
 })

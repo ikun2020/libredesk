@@ -23,6 +23,7 @@ type Attachment struct {
 	UUID         string               `json:"uuid"`
 	URL          string               `json:"url"`
 	ThumbnailURL string               `json:"thumbnail_url"`
+	PreviewURL   string               `json:"preview_url,omitempty"`
 	Header       textproto.MIMEHeader `json:"-"`
 }
 
