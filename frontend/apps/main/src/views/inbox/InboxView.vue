@@ -1,5 +1,5 @@
 <template>
-  <ConversationPlaceholder v-if="['inbox', 'team-inbox', 'view-inbox'].includes(route.name)" />
+  <ConversationPlaceholder v-if="isInboxList" />
   <router-view />
 </template>
 
@@ -10,11 +10,13 @@ import { useIntervalFn, useDocumentVisibility, useEventListener } from '@vueuse/
 import { useConversationStore } from '../../stores/conversation'
 import { CONVERSATION_LIST_TYPE, CONVERSATION_DEFAULT_STATUSES } from '../../constants/conversation'
 import ConversationPlaceholder from '@/features/conversation/ConversationPlaceholder.vue'
+import { scheduleConversationDetailPreload } from '@main/router/conversation-detail'
 
 const route = useRoute()
 const type = computed(() => route.params.type)
 const teamID = computed(() => route.params.teamID)
 const viewID = computed(() => route.params.viewID)
+const isInboxList = computed(() => ['inbox', 'team-inbox', 'view-inbox'].includes(route.name))
 
 const conversationStore = useConversationStore()
 
@@ -61,6 +63,15 @@ const fetchForCurrentRoute = () => {
 onMounted(fetchForCurrentRoute)
 
 const visibility = useDocumentVisibility()
+const canPreloadDetail = computed(() =>
+  isInboxList.value && visibility.value === 'visible' && storeHasCurrentList() &&
+  !conversationStore.conversations.loading && !conversationStore.conversations.errorMessage &&
+  conversationStore.conversations.data.length > 0
+)
+watch(canPreloadDetail, (ready, _, onCleanup) => {
+  if (ready) onCleanup(scheduleConversationDetailPreload(() => canPreloadDetail.value))
+}, { immediate: true, flush: 'post' })
+
 const { pause, resume } = useIntervalFn(
   () => conversationStore.refreshConversationList(),
   120000

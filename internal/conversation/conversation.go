@@ -341,6 +341,7 @@ type queries struct {
 	// Conversation queries.
 	GetConversationUUID                 *sqlx.Stmt `query:"get-conversation-uuid"`
 	GetConversationInboxContact         *sqlx.Stmt `query:"get-conversation-inbox-contact"`
+	GetConversationAssignment           *sqlx.Stmt `query:"get-conversation-assignment"`
 	GetConversation                     *sqlx.Stmt `query:"get-conversation"`
 	GetConversationListItem             *sqlx.Stmt `query:"get-conversation-list-item"`
 	GetConversationsCreatedAfter        *sqlx.Stmt `query:"get-conversations-created-after"`
@@ -513,6 +514,19 @@ func (c *Manager) GetConversation(id int, uuid, refNum string) (models.Conversat
 	}
 
 	return conversation, nil
+}
+
+// CanReadConversation checks an agent's read access using the conversation's current assignment.
+func (c *Manager) CanReadConversation(uuid string, user umodels.User) (bool, error) {
+	var assignedUserID, assignedTeamID null.Int
+	if err := c.q.GetConversationAssignment.QueryRow(uuid).Scan(&assignedUserID, &assignedTeamID); err != nil {
+		if err == sql.ErrNoRows {
+			return false, envelope.NewError(envelope.NotFoundError, c.i18n.T("validation.notFoundConversation"), nil)
+		}
+		c.lo.Error("error fetching conversation assignment", "error", err)
+		return false, envelope.NewError(envelope.GeneralError, c.i18n.T("globals.messages.somethingWentWrong"), nil)
+	}
+	return authz.CanReadAssignment(user, assignedUserID, assignedTeamID), nil
 }
 
 // GetContactPreviousConversations retrieves previous conversations for a contact with a configurable limit.

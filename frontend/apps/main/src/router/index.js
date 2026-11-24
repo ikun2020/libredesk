@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAppSettingsStore } from '@main/stores/appSettings'
 import { getI18n } from '@main/i18n'
 import { abortRouteScope } from '@main/api'
+import { loadConversationDetail } from './conversation-detail'
 
 const routes = [
   {
@@ -73,7 +74,7 @@ const routes = [
               {
                 path: 'conversation/:uuid',
                 name: 'team-inbox-conversation',
-                component: () => import('@main/views/conversation/ConversationDetailView.vue'),
+                component: loadConversationDetail,
                 props: true,
                 meta: { titleKey: 'globals.terms.teamInbox', hidePageHeader: true }
               }
@@ -97,7 +98,7 @@ const routes = [
               {
                 path: 'conversation/:uuid',
                 name: 'view-inbox-conversation',
-                component: () => import('@main/views/conversation/ConversationDetailView.vue'),
+                component: loadConversationDetail,
                 props: true,
                 meta: { titleKey: 'globals.terms.view', hidePageHeader: true }
               }
@@ -137,7 +138,7 @@ const routes = [
               {
                 path: 'conversation/:uuid',
                 name: 'inbox-conversation',
-                component: () => import('@main/views/conversation/ConversationDetailView.vue'),
+                component: loadConversationDetail,
                 props: true,
                 meta: {
                   titleKey: 'globals.terms.inbox',

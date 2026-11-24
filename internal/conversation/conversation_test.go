@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/abhinavxd/libredesk/internal/conversation/models"
 	"github.com/abhinavxd/libredesk/internal/csat"
 	"github.com/abhinavxd/libredesk/internal/dbutil"
+	"github.com/abhinavxd/libredesk/internal/envelope"
 	"github.com/abhinavxd/libredesk/internal/inbox"
 	tmodels "github.com/abhinavxd/libredesk/internal/team/models"
 	"github.com/abhinavxd/libredesk/internal/testutil"
@@ -104,6 +106,47 @@ func TestCSATSubmissionBroadcastsSavedFeedback(t *testing.T) {
 				t.Fatal("rejected response broadcast an update")
 			}
 		})
+	}
+}
+
+func TestCanReadConversationUsesCurrentAssignment(t *testing.T) {
+	db := testutil.NewDB(t, "conversation_read_assignment")
+	lo := logf.New(logf.Opts{})
+	m := &Manager{lo: &lo, i18n: testutil.NewI18n(t)}
+	if err := dbutil.ScanSQLFile("queries.sql", &m.q, db, efs); err != nil {
+		t.Fatal(err)
+	}
+	var contactID, agentID, inboxID int
+	if err := db.Get(&contactID, `INSERT INTO users (type, first_name, last_name) VALUES ('contact', 'Contact', '') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Get(&agentID, `INSERT INTO users (type, first_name, last_name) VALUES ('agent', 'Agent', '') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Get(&inboxID, `INSERT INTO inboxes (name, channel) VALUES ('Chat', 'livechat') RETURNING id`); err != nil {
+		t.Fatal(err)
+	}
+	var uuid string
+	if err := db.Get(&uuid, `INSERT INTO conversations (contact_id, inbox_id, status_id, assigned_user_id)
+		VALUES ($1, $2, (SELECT id FROM conversation_statuses LIMIT 1), $3) RETURNING uuid`, contactID, inboxID, agentID); err != nil {
+		t.Fatal(err)
+	}
+	user := umodels.User{ID: agentID, Enabled: true, Permissions: []string{am.PermConversationsRead, am.PermConversationsReadAssigned}}
+	if allowed, err := m.CanReadConversation(uuid, user); err != nil || !allowed {
+		t.Fatalf("assignee denied: allowed=%v err=%v", allowed, err)
+	}
+	if _, err := db.Exec(`UPDATE conversations SET assigned_user_id = NULL WHERE uuid = $1`, uuid); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := m.CanReadConversation(uuid, user); err != nil || allowed {
+		t.Fatalf("former assignee should be denied: allowed=%v err=%v", allowed, err)
+	}
+	if _, err := db.Exec(`DELETE FROM conversations WHERE uuid = $1`, uuid); err != nil {
+		t.Fatal(err)
+	}
+	var notFound envelope.Error
+	if allowed, err := m.CanReadConversation(uuid, user); allowed || !errors.As(err, &notFound) || notFound.ErrorType != envelope.NotFoundError {
+		t.Fatalf("missing conversation should return not found: allowed=%v err=%v", allowed, err)
 	}
 }
 

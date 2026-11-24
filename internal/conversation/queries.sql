@@ -577,6 +577,11 @@ SELECT uuid from conversations where id = $1;
 -- name: get-conversation-inbox-contact
 SELECT inbox_id, contact_id FROM conversations WHERE uuid = $1;
 
+-- name: get-conversation-assignment
+SELECT assigned_user_id, assigned_team_id
+FROM conversations
+WHERE uuid = NULLIF($1, '')::uuid;
+
 -- name: update-conversation-assigned-user
 -- $3 protects automatic AI assignments, $4 marks an explicit assignment back to AI.
 -- Older transfers without a flag only count if they happened after the previous round ended.

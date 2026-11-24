@@ -59,10 +59,12 @@ func handleGetMessages(r *fastglue.Request) error {
 		return sendErrorEnvelope(r, err)
 	}
 
-	// Check permission
-	_, err = enforceConversationAccess(app, uuid, user)
+	allowed, err := app.conversation.CanReadConversation(uuid, user)
 	if err != nil {
 		return sendErrorEnvelope(r, err)
+	}
+	if !allowed {
+		return sendErrorEnvelope(r, envelope.NewError(envelope.PermissionError, "Permission denied", nil))
 	}
 
 	messages, pageSize, err := app.conversation.GetAgentConversationMessages(uuid, page, pageSize, private, msgTypes)
